@@ -16,9 +16,11 @@ fn test_sign_encrypt() {
 
     let _ = signer.acquire_key(true).expect("No signer private key");
 
-    let rcpt = store
+    let mut rcpt = store
         .find_cert_by_subject_str(RECIPIENT)
         .expect("No recipient certificate");
+
+    let _ = rcpt.acquire_key(true).expect("No recipient private key");
 
     let content = CmsContent::builder()
         .signer(signer)
