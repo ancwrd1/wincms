@@ -56,7 +56,6 @@ pub enum CertError {
     NameError,
     NotFound,
     InvalidStoreType,
-    InvalidKeyType,
 }
 
 impl error::Error for CertError {}
@@ -70,7 +69,6 @@ impl fmt::Display for CertError {
             CertError::NameError => write!(f, "Name error"),
             CertError::NotFound => write!(f, "Certificate not found in the certificate store"),
             CertError::InvalidStoreType => write!(f, "Invalid certificate store type"),
-            CertError::InvalidKeyType => write!(f, "Invalid private key type"),
         }
     }
 }
