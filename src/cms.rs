@@ -8,6 +8,7 @@ use log::{debug, error};
 use winapi::um::{errhandlingapi::GetLastError, wincrypt};
 
 use crate::cng::*;
+use winapi::um::wincrypt::CryptDecryptAndVerifyMessageSignature;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CmsError {
@@ -182,6 +183,68 @@ impl CmsContent {
                 debug!("Sign and encrypt succeeded");
                 Ok(encoded_blob)
             }
+        }
+    }
+
+    pub fn decrypt_and_verify(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
+        unsafe {
+            let mut stores = [store.as_ptr()];
+            let mut decrypt_param = mem::zeroed::<wincrypt::CRYPT_DECRYPT_MESSAGE_PARA>();
+            decrypt_param.cbSize = mem::size_of::<wincrypt::CRYPT_DECRYPT_MESSAGE_PARA>() as u32;
+            decrypt_param.dwMsgAndCertEncodingType = MY_ENCODING_TYPE;
+            decrypt_param.cCertStore = 1;
+            decrypt_param.rghCertStore = stores.as_mut_ptr();
+
+            let mut verify_param = mem::zeroed::<wincrypt::CRYPT_VERIFY_MESSAGE_PARA>();
+            verify_param.cbSize = mem::size_of::<wincrypt::CRYPT_VERIFY_MESSAGE_PARA>() as u32;
+            verify_param.dwMsgAndCertEncodingType = MY_ENCODING_TYPE;
+
+            let mut message_size = 0u32;
+
+            let rc = wincrypt::CryptDecryptAndVerifyMessageSignature(
+                &mut decrypt_param,
+                &mut verify_param,
+                0,
+                data.as_ptr(),
+                data.len() as u32,
+                ptr::null_mut(),
+                &mut message_size,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ) != 0;
+
+            if !rc {
+                error!(
+                    "Cannot calculate message size, error: {:08x}",
+                    GetLastError()
+                );
+                return Err(CmsError::ProcessingError(GetLastError()));
+            }
+
+            let mut message = vec![0u8; message_size as usize];
+
+            let rc = CryptDecryptAndVerifyMessageSignature(
+                &mut decrypt_param,
+                &mut verify_param,
+                0,
+                data.as_ptr(),
+                data.len() as u32,
+                message.as_mut_ptr(),
+                &mut message_size,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ) != 0;
+
+            if !rc {
+                error!(
+                    "Cannot decrypt and verify message, error: {:08x}",
+                    GetLastError()
+                );
+                return Err(CmsError::ProcessingError(GetLastError()));
+            }
+
+            debug!("Decrypt and verify succeeded");
+            Ok(message)
         }
     }
 }

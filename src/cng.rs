@@ -323,6 +323,10 @@ impl FromStr for CertStoreType {
 pub struct CertStore(HCERTSTORE);
 
 impl CertStore {
+    pub fn as_ptr(&self) -> HCERTSTORE {
+        self.0
+    }
+
     pub fn open(store_type: CertStoreType, store_name: &str) -> Result<CertStore, CertError> {
         let store_name = U16CString::from_str(store_name)?;
         let handle = unsafe {
