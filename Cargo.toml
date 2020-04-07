@@ -1,17 +1,10 @@
 [package]
-name = "cms_cng"
+name = "wincms"
 version = "0.1.0"
-authors = ["Dmitry Pankratov <dmitry@pankratov.net>"]
+authors = ["Dmitry Pankratov <dmitry@everyoneprint.com>"]
 edition = "2018"
-
-[[bin]]
-name = "cmsutil"
-path = "src/main.rs"
 
 [dependencies]
 winapi = { version = "0.3", features = ["wincrypt", "ncrypt", "errhandlingapi", "winerror"] }
 widestring = "0.4"
-structopt = "0.3"
-memmap = "0.7"
 log = "0.4"
-env_logger = "0.7"
