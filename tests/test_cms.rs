@@ -25,8 +25,7 @@ fn test_sign_encrypt() {
     let content = CmsContent::builder()
         .signer(signer)
         .recipients(vec![rcpt])
-        .build()
-        .expect("Content build failed");
+        .build();
 
     let encrypted = content
         .sign_and_encrypt(MESSAGE.as_bytes())

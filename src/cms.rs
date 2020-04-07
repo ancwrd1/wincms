@@ -56,6 +56,8 @@ impl From<CertError> for CmsError {
 pub struct CmsContentBuilder {
     signer: Option<CertContext>,
     recipients: Vec<CertContext>,
+    hash_algorithm: String,
+    encrypt_algorithm: String,
 }
 
 impl CmsContentBuilder {
@@ -72,62 +74,69 @@ impl CmsContentBuilder {
         self
     }
 
-    pub fn build(self) -> Result<CmsContent, CmsError> {
-        if let Some(signer) = self.signer {
-            if self.recipients.is_empty() {
-                return Err(CmsError::NoRecipient);
-            }
+    pub fn hash_algorithm<S>(mut self, algorithm: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.hash_algorithm = algorithm.as_ref().to_owned();
+        self
+    }
 
-            Ok(CmsContent {
-                signer,
-                recipients: self.recipients,
-            })
-        } else {
-            Err(CmsError::NoSigner)
-        }
+    pub fn encrypt_algorithm<S>(mut self, algorithm: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.encrypt_algorithm = algorithm.as_ref().to_owned();
+        self
+    }
+
+    pub fn build(self) -> CmsContent {
+        CmsContent(self)
     }
 }
 
-pub struct CmsContent {
-    signer: CertContext,
-    recipients: Vec<CertContext>,
-}
+pub struct CmsContent(CmsContentBuilder);
 
 impl CmsContent {
     pub fn builder() -> CmsContentBuilder {
         CmsContentBuilder {
             signer: None,
             recipients: Vec::new(),
+            hash_algorithm: wincrypt::szOID_RSA_SHA256RSA.to_owned(),
+            encrypt_algorithm: wincrypt::szOID_NIST_AES256_CBC.to_owned(),
         }
     }
 
     /// Produces PKCS#7 CMS message which is signed with signer key and encrypted with recipient certificates
     pub fn sign_and_encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CmsError> {
+        let signer = self.0.signer.as_ref().ok_or(CmsError::NoSigner)?;
+
+        if self.0.recipients.is_empty() {
+            return Err(CmsError::NoRecipient);
+        }
+
         unsafe {
             let mut hash_alg = mem::zeroed::<wincrypt::CRYPT_ALGORITHM_IDENTIFIER>();
-            let alg_str = CString::new(wincrypt::szOID_RSA_SHA256RSA)?;
+            let alg_str = CString::new(self.0.hash_algorithm.as_bytes())?;
             hash_alg.pszObjId = alg_str.as_ptr() as *mut _;
 
-            debug!("Using hash algorithm: {}", wincrypt::szOID_RSA_SHA256RSA);
+            debug!("Using hash algorithm: {}", self.0.hash_algorithm);
 
-            let mut signers = [self.signer.as_ptr()];
+            let mut signers = [signer.as_ptr()];
 
             let mut sign_param = mem::zeroed::<wincrypt::CRYPT_SIGN_MESSAGE_PARA>();
             sign_param.cbSize = mem::size_of::<wincrypt::CRYPT_SIGN_MESSAGE_PARA>() as u32;
             sign_param.dwMsgEncodingType = MY_ENCODING_TYPE;
-            sign_param.pSigningCert = self.signer.as_ptr();
+            sign_param.pSigningCert = signer.as_ptr();
             sign_param.cMsgCert = 1;
             sign_param.rgpMsgCert = signers.as_mut_ptr();
             sign_param.HashAlgorithm = hash_alg;
 
             let mut crypt_alg = mem::zeroed::<wincrypt::CRYPT_ALGORITHM_IDENTIFIER>();
-            let alg_str = CString::new(wincrypt::szOID_NIST_AES256_CBC)?;
+            let alg_str = CString::new(self.0.encrypt_algorithm.as_bytes())?;
             crypt_alg.pszObjId = alg_str.as_ptr() as *mut _;
 
-            debug!(
-                "Using encryption algorithm: {}",
-                wincrypt::szOID_NIST_AES256_CBC
-            );
+            debug!("Using encryption algorithm: {}", self.0.encrypt_algorithm);
 
             let mut encrypt_param = mem::zeroed::<wincrypt::CRYPT_ENCRYPT_MESSAGE_PARA>();
             encrypt_param.cbSize = mem::size_of::<wincrypt::CRYPT_ENCRYPT_MESSAGE_PARA>() as u32;
@@ -135,6 +144,7 @@ impl CmsContent {
             encrypt_param.ContentEncryptionAlgorithm = crypt_alg;
 
             let mut recipients = self
+                .0
                 .recipients
                 .iter()
                 .map(|r| r.as_ptr())
@@ -144,7 +154,7 @@ impl CmsContent {
             let result = wincrypt::CryptSignAndEncryptMessage(
                 &mut sign_param,
                 &mut encrypt_param as *mut _ as *mut _,
-                self.recipients.len() as u32,
+                self.0.recipients.len() as u32,
                 recipients.as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as u32,
@@ -168,7 +178,7 @@ impl CmsContent {
             let result = wincrypt::CryptSignAndEncryptMessage(
                 &mut sign_param,
                 &mut encrypt_param as *mut _ as *mut _,
-                self.recipients.len() as u32,
+                self.0.recipients.len() as u32,
                 recipients.as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as u32,
