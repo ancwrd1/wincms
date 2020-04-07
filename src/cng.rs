@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
