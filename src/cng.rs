@@ -14,13 +14,13 @@ use winapi::{
             CertAddCertificateContextToStore, CertAddEncodedCertificateToStore, CertCloseStore,
             CertFindCertificateInStore, CertFreeCertificateContext, CertOpenStore,
             CertSetCertificateContextProperty, CryptAcquireCertificatePrivateKey,
-            CERT_FIND_SUBJECT_STR, CERT_NCRYPT_KEY_HANDLE_PROP_ID,
+            PFXImportCertStore, CERT_FIND_SUBJECT_STR, CERT_NCRYPT_KEY_HANDLE_PROP_ID,
             CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES, CERT_STORE_OPEN_EXISTING_FLAG,
             CERT_STORE_PROV_SYSTEM, CERT_SYSTEM_STORE_CURRENT_SERVICE,
             CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE,
             CRYPT_ACQUIRE_CACHE_FLAG, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
-            CRYPT_ACQUIRE_SILENT_FLAG, HCERTSTORE, PCCERT_CONTEXT, PKCS_7_ASN_ENCODING,
-            X509_ASN_ENCODING,
+            CRYPT_ACQUIRE_SILENT_FLAG, CRYPT_DATA_BLOB, HCERTSTORE, PCCERT_CONTEXT,
+            PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
         },
     },
 };
@@ -315,6 +315,23 @@ impl CertStore {
             Err(CertError::StoreError(unsafe { GetLastError() }))
         } else {
             Ok(CertStore(handle))
+        }
+    }
+
+    pub fn from_pfx(data: &[u8], password: &str) -> Result<CertStore, CertError> {
+        unsafe {
+            let mut blob = CRYPT_DATA_BLOB {
+                cbData: data.len() as u32,
+                pbData: data.as_ptr() as *const _ as *mut _,
+            };
+            let password = U16CString::from_str(password)?;
+
+            let store = PFXImportCertStore(&mut blob, password.as_ptr(), 0);
+            if store.is_null() {
+                Err(CertError::StoreError(GetLastError()))
+            } else {
+                Ok(CertStore(store))
+            }
         }
     }
 
