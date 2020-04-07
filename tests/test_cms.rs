@@ -31,4 +31,9 @@ fn test_sign_encrypt() {
         .expect("Sign and encrypt failed");
 
     assert!(encrypted.len() > MESSAGE.len());
+
+    let decrypted =
+        CmsContent::decrypt_and_verify(&store, &encrypted).expect("Decrypt and verify failed");
+
+    assert_eq!(MESSAGE.as_bytes(), decrypted.as_slice());
 }
