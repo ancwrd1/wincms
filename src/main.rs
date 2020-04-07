@@ -1,9 +1,12 @@
 use std::{error::Error, fs, path::PathBuf};
 
+use log::debug;
 use structopt::StructOpt;
 
 pub mod cms;
 pub mod cng;
+
+use cng::*;
 
 #[derive(StructOpt)]
 #[structopt(
@@ -50,17 +53,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input_file = fs::File::open(&args.input_file)?;
     let mmap = unsafe { memmap::MmapOptions::new().map(&input_file)? };
 
+    let store_type = args.store_type.unwrap_or(CertStoreType::CurrentUser);
+    let store = CertStore::open(store_type, "my")?;
+
+    let mut signer = store.find_cert_by_subject_str(&args.signer)?;
+    debug!("Acquired signer certificate for {}", args.signer);
+
+    let mut recipients = Vec::new();
+    for rcpt in &args.recipients {
+        recipients.push(store.find_cert_by_subject_str(rcpt)?);
+        debug!("Acquired recipient certificate for {}", rcpt);
+    }
+
+    let key = signer.acquire_key(args.silent)?;
+    let key_prov = key.get_provider()?;
+    let key_name = key.get_name()?;
+    debug!("Acquired private key: {}: {}", key_prov, key_name);
+
+    // TESTTEST
+    // let raw_cert = signer.get_data();
+    // let raw_key = NCryptKey::open(&key_prov, &key_name)?;
+    // CertStore::open(CertStoreType::LocalMachine, "my")?.add_cert(&raw_cert, Some(raw_key))?;
+
     let mut builder = cms::CmsContent::builder()
-        .silent(args.silent)
-        .signer(args.signer)
-        .recipients(args.recipients);
+        .signer(signer)
+        .recipients(recipients);
 
     if let Some(pin) = args.pin {
         builder = builder.password(pin);
-    }
-
-    if let Some(store_type) = args.store_type {
-        builder = builder.cert_store_type(store_type);
     }
 
     let content = builder.build()?;

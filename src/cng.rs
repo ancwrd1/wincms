@@ -18,8 +18,9 @@ use winapi::{
             CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES, CERT_STORE_OPEN_EXISTING_FLAG,
             CERT_STORE_PROV_SYSTEM, CERT_SYSTEM_STORE_CURRENT_SERVICE,
             CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE,
-            CRYPT_ACQUIRE_CACHE_FLAG, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCERTSTORE,
-            PCCERT_CONTEXT, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+            CRYPT_ACQUIRE_CACHE_FLAG, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
+            CRYPT_ACQUIRE_SILENT_FLAG, HCERTSTORE, PCCERT_CONTEXT, PKCS_7_ASN_ENCODING,
+            X509_ASN_ENCODING,
         },
     },
 };
@@ -159,9 +160,7 @@ impl NCryptKey {
 
     pub fn get_provider(&self) -> Result<String, CertError> {
         let handle_str = U16CString::from_str(NCRYPT_PROVIDER_HANDLE_PROPERTY)?;
-        let name_str = U16CString::from_str(NCRYPT_NAME_PROPERTY)?;
         let mut prov_handle: NCRYPT_HANDLE = 0;
-        let mut prov_name_prop = vec![0u8; 1024];
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
@@ -172,6 +171,7 @@ impl NCryptKey {
                 &mut result,
                 0,
             ) as u32;
+
             if rc != ERROR_SUCCESS {
                 error!(
                     "Cannot get key property: {}",
@@ -179,6 +179,10 @@ impl NCryptKey {
                 );
                 return Err(CertError::ContextError(rc));
             }
+
+            let name_str = U16CString::from_str(NCRYPT_NAME_PROPERTY)?;
+            let mut prov_name_prop = vec![0u8; 1024];
+
             let rc = NCryptGetProperty(
                 prov_handle,
                 name_str.as_ptr(),
@@ -187,6 +191,9 @@ impl NCryptKey {
                 &mut result,
                 0,
             ) as u32;
+
+            NCryptFreeObject(prov_handle);
+
             if rc != ERROR_SUCCESS {
                 error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
                 Err(CertError::ContextError(rc))
@@ -216,10 +223,17 @@ impl CertContext {
         (self.0).0
     }
 
-    pub fn acquire_key(&mut self) -> Result<NCryptKey, CertError> {
+    pub fn key(&self) -> Option<NCryptKey> {
+        self.1.clone()
+    }
+
+    pub fn acquire_key(&mut self, silent: bool) -> Result<NCryptKey, CertError> {
         let mut key: NCRYPT_HANDLE = 0;
         let mut key_spec: u32 = 0;
-        let flags = CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG;
+        let mut flags = CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG;
+        if silent {
+            flags |= CRYPT_ACQUIRE_SILENT_FLAG;
+        }
         unsafe {
             let result = CryptAcquireCertificatePrivateKey(
                 self.as_ptr(),

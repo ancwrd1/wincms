@@ -16,7 +16,7 @@ use winapi::{
         wincrypt::{
             szOID_NIST_AES256_CBC, szOID_RSA_SHA256RSA, CryptSignAndEncryptMessage,
             CRYPT_ALGORITHM_IDENTIFIER, CRYPT_DECRYPT_MESSAGE_PARA, CRYPT_ENCRYPT_MESSAGE_PARA,
-            CRYPT_MESSAGE_SILENT_KEYSET_FLAG, CRYPT_SIGN_MESSAGE_PARA,
+            CRYPT_SIGN_MESSAGE_PARA,
         },
     },
 };
@@ -69,31 +69,22 @@ impl From<CertError> for CmsError {
 }
 
 pub struct CmsContentBuilder {
-    signer: String,
-    recipients: Vec<String>,
+    signer: Option<CertContext>,
+    recipients: Vec<CertContext>,
     password: Option<String>,
-    silent: bool,
-    cert_store_type: CertStoreType,
 }
 
 impl CmsContentBuilder {
-    pub fn signer<S>(mut self, signer: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.signer = signer.as_ref().to_owned();
+    pub fn signer(mut self, signer: CertContext) -> Self {
+        self.signer = Some(signer);
         self
     }
 
-    pub fn recipients<I, S>(mut self, recipients: I) -> Self
+    pub fn recipients<I>(mut self, recipients: I) -> Self
     where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        I: IntoIterator<Item = CertContext>,
     {
-        self.recipients = recipients
-            .into_iter()
-            .map(|s| s.as_ref().to_owned())
-            .collect();
+        self.recipients = recipients.into_iter().collect();
         self
     }
 
@@ -105,88 +96,55 @@ impl CmsContentBuilder {
         self
     }
 
-    pub fn silent(mut self, silent: bool) -> Self {
-        self.silent = silent;
-        self
-    }
-
-    pub fn cert_store_type(mut self, store_type: CertStoreType) -> Self {
-        self.cert_store_type = store_type;
-        self
-    }
-
     pub fn build(self) -> Result<CmsContent, CmsError> {
-        if self.signer.is_empty() {
-            return Err(CmsError::NoSigner);
-        }
-
-        if self.recipients.is_empty() {
-            return Err(CmsError::NoRecipient);
-        }
-
-        let store = CertStore::open(self.cert_store_type, "my")?;
-
-        let mut signer = store.find_cert_by_subject_str(&self.signer)?;
-        debug!("Acquired signer certificate for {}", self.signer);
-
-        let mut recipients = Vec::new();
-        for rcpt in &self.recipients {
-            recipients.push(store.find_cert_by_subject_str(rcpt)?);
-            debug!("Acquired recipient certificate for {}", rcpt);
-        }
-
-        let key = signer.acquire_key()?;
-        let key_prov = key.get_provider()?;
-        let key_name = key.get_name()?;
-        debug!("Acquired private key: {}: {}", key_prov, key_name);
-
-        // TESTTEST
-        // let raw_cert = signer.get_data();
-        // let raw_key = NCryptKey::open(&key_prov, &key_name)?;
-        // CertStore::open(CertStoreType::LocalMachine, "my")?.add_cert(&raw_cert, Some(raw_key))?;
-
-        if let Some(password) = self.password {
-            let pin_prop = U16CString::from_str(NCRYPT_PIN_PROPERTY)?;
-            let pin = U16CString::from_str(&password)?;
-
-            let result = unsafe {
-                NCryptSetProperty(
-                    key.as_ptr(),
-                    pin_prop.as_ptr(),
-                    pin.as_ptr() as *mut u8,
-                    password.len() as u32,
-                    0,
-                ) as u32
-            };
-            if result != ERROR_SUCCESS {
-                error!("Cannot set pin code");
-                return Err(CmsError::PinError);
+        if let Some(signer) = self.signer {
+            if self.recipients.is_empty() {
+                return Err(CmsError::NoRecipient);
             }
-            debug!("Pin code set successfully");
-        }
 
-        Ok(CmsContent {
-            signer,
-            recipients,
-            silent: self.silent,
-        })
+            if let Some(password) = self.password {
+                if let Some(key) = signer.key() {
+                    let pin_prop = U16CString::from_str(NCRYPT_PIN_PROPERTY)?;
+                    let pin = U16CString::from_str(&password)?;
+
+                    let result = unsafe {
+                        NCryptSetProperty(
+                            key.as_ptr(),
+                            pin_prop.as_ptr(),
+                            pin.as_ptr() as *mut u8,
+                            password.len() as u32,
+                            0,
+                        ) as u32
+                    };
+                    if result != ERROR_SUCCESS {
+                        error!("Cannot set pin code");
+                        return Err(CmsError::PinError);
+                    }
+                    debug!("Pin code set successfully");
+                }
+            }
+
+            Ok(CmsContent {
+                signer,
+                recipients: self.recipients,
+            })
+        } else {
+            Err(CmsError::NoSigner)
+        }
     }
 }
 
 pub struct CmsContent {
     signer: CertContext,
     recipients: Vec<CertContext>,
-    silent: bool,
 }
 
 impl CmsContent {
     pub fn builder() -> CmsContentBuilder {
         CmsContentBuilder {
-            signer: String::new(),
+            signer: None,
             recipients: Vec::new(),
             password: None,
-            silent: false,
-            cert_store_type: CertStoreType::CurrentUser,
         }
     }
 
@@ -208,11 +166,6 @@ impl CmsContent {
             sign_param.cMsgCert = 1;
             sign_param.rgpMsgCert = signers.as_mut_ptr();
             sign_param.HashAlgorithm = hash_alg;
-            sign_param.dwFlags = if self.silent {
-                CRYPT_MESSAGE_SILENT_KEYSET_FLAG
-            } else {
-                0
-            };
 
             let mut crypt_alg = mem::zeroed::<CRYPT_ALGORITHM_IDENTIFIER>();
             let alg_str = CString::new(szOID_NIST_AES256_CBC)?;
