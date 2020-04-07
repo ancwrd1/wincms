@@ -3,11 +3,13 @@ use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 use log::error;
 use widestring::{U16CStr, U16CString};
 use winapi::{
-    ctypes::c_void,
     shared::winerror::ERROR_SUCCESS,
     um::{
         errhandlingapi::GetLastError,
-        ncrypt::{NCryptFreeObject, NCryptOpenStorageProvider, NCRYPT_HANDLE, SECURITY_STATUS},
+        ncrypt::{
+            NCryptFreeObject, NCryptOpenStorageProvider, NCryptSetProperty, NCRYPT_HANDLE,
+            SECURITY_STATUS,
+        },
         wincrypt::{
             CertAddCertificateContextToStore, CertAddEncodedCertificateToStore, CertCloseStore,
             CertFindCertificateInStore, CertFreeCertificateContext, CertOpenStore,
@@ -55,6 +57,7 @@ pub enum CertError {
     NameError,
     NotFound,
     InvalidStoreType,
+    PinError,
 }
 
 impl error::Error for CertError {}
@@ -68,6 +71,7 @@ impl fmt::Display for CertError {
             CertError::NameError => write!(f, "Name error"),
             CertError::NotFound => write!(f, "Certificate not found in the certificate store"),
             CertError::InvalidStoreType => write!(f, "Invalid certificate store type"),
+            CertError::PinError => write!(f, "PIN error"),
         }
     }
 }
@@ -152,7 +156,7 @@ impl NCryptKey {
                 error!("Cannot get key property: {}", NCRYPT_NAME_PROPERTY);
                 return Err(CertError::ContextError(rc));
             }
-            Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as *const u16).to_string_lossy())
+            Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as *const _).to_string_lossy())
         }
     }
 
@@ -164,7 +168,7 @@ impl NCryptKey {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
                 handle_str.as_ptr(),
-                &mut prov_handle as *mut NCRYPT_HANDLE as *mut u8,
+                &mut prov_handle as *mut _ as *mut _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
                 0,
@@ -196,8 +200,30 @@ impl NCryptKey {
                 error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
                 Err(CertError::ContextError(rc))
             } else {
-                Ok(U16CStr::from_ptr_str(prov_name_prop.as_ptr() as *const u16).to_string_lossy())
+                Ok(U16CStr::from_ptr_str(prov_name_prop.as_ptr() as *const _).to_string_lossy())
             }
+        }
+    }
+
+    pub fn set_pin(&self, pin: &str) -> Result<(), CertError> {
+        let pin_prop = U16CString::from_str(NCRYPT_PIN_PROPERTY)?;
+        let pin_val = U16CString::from_str(&pin)?;
+
+        let result = unsafe {
+            NCryptSetProperty(
+                self.as_ptr(),
+                pin_prop.as_ptr(),
+                pin_val.as_ptr() as *mut _,
+                pin.len() as u32,
+                0,
+            ) as u32
+        };
+
+        if result != ERROR_SUCCESS {
+            error!("Cannot set pin code");
+            Err(CertError::PinError)
+        } else {
+            Ok(())
         }
     }
 }
@@ -305,7 +331,7 @@ impl CertStore {
                 0,
                 0,
                 store_type.to_flags() | CERT_STORE_OPEN_EXISTING_FLAG,
-                store_name.as_ptr() as *const c_void,
+                store_name.as_ptr() as *const _,
             )
         };
         if handle.is_null() {
@@ -344,7 +370,7 @@ impl CertStore {
                 MY_ENCODING_TYPE,
                 0,
                 CERT_FIND_SUBJECT_STR,
-                subject.as_ptr() as *const c_void,
+                subject.as_ptr() as *const _,
                 ptr::null(),
             )
         };
@@ -398,7 +424,7 @@ impl CertStore {
                     context.as_ptr(),
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
-                    key.as_ptr() as *const c_void,
+                    key.as_ptr() as *const _,
                 ) != 0;
 
                 if !result {
