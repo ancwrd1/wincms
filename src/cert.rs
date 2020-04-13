@@ -2,7 +2,6 @@ use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
-use winapi::um::wincrypt::CertDuplicateCertificateContext;
 use winapi::{
     shared::winerror::ERROR_SUCCESS,
     um::{
@@ -13,15 +12,15 @@ use winapi::{
         },
         wincrypt::{
             CertAddCertificateContextToStore, CertAddEncodedCertificateToStore, CertCloseStore,
-            CertFindCertificateInStore, CertFreeCertificateContext, CertOpenStore,
-            CertSetCertificateContextProperty, CryptAcquireCertificatePrivateKey,
-            PFXImportCertStore, CERT_FIND_SUBJECT_STR, CERT_NCRYPT_KEY_HANDLE_PROP_ID,
-            CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES, CERT_STORE_OPEN_EXISTING_FLAG,
-            CERT_STORE_PROV_SYSTEM, CERT_SYSTEM_STORE_CURRENT_SERVICE,
-            CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE,
-            CRYPT_ACQUIRE_CACHE_FLAG, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
-            CRYPT_ACQUIRE_SILENT_FLAG, CRYPT_DATA_BLOB, HCERTSTORE, PCCERT_CONTEXT,
-            PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+            CertDuplicateCertificateContext, CertFindCertificateInStore,
+            CertFreeCertificateContext, CertOpenStore, CertSetCertificateContextProperty,
+            CryptAcquireCertificatePrivateKey, PFXImportCertStore, CERT_FIND_SUBJECT_STR,
+            CERT_NCRYPT_KEY_HANDLE_PROP_ID, CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
+            CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_SYSTEM,
+            CERT_SYSTEM_STORE_CURRENT_SERVICE, CERT_SYSTEM_STORE_CURRENT_USER,
+            CERT_SYSTEM_STORE_LOCAL_MACHINE, CRYPT_ACQUIRE_CACHE_FLAG,
+            CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CRYPT_ACQUIRE_SILENT_FLAG, CRYPT_DATA_BLOB,
+            HCERTSTORE, PCCERT_CONTEXT, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
         },
     },
 };
@@ -227,23 +226,30 @@ impl NCryptKey {
     }
 }
 
-struct InnerContext(PCCERT_CONTEXT);
+pub struct CertContext(PCCERT_CONTEXT, Option<NCryptKey>);
 
-impl Drop for InnerContext {
+impl Drop for CertContext {
     fn drop(&mut self) {
         unsafe { CertFreeCertificateContext(self.0) };
     }
 }
 
-#[derive(Clone)]
-pub struct CertContext(Rc<InnerContext>, Option<NCryptKey>);
+impl Clone for CertContext {
+    fn clone(&self) -> Self {
+        CertContext(
+            unsafe { CertDuplicateCertificateContext(self.0) },
+            self.1.clone(),
+        )
+    }
+}
 
 impl CertContext {
     pub fn new(context: PCCERT_CONTEXT) -> CertContext {
-        CertContext(Rc::new(InnerContext(context)), None)
+        CertContext(context, None)
     }
+
     pub fn as_ptr(&self) -> PCCERT_CONTEXT {
-        (self.0).0
+        self.0
     }
 
     pub fn key(&self) -> Option<NCryptKey> {

@@ -1,4 +1,4 @@
-use wincms::{cms::CmsContent, cng::CertStore};
+use wincms::{cert::CertStore, cms::CmsContent};
 
 const PFX: &[u8] = include_bytes!("wincms.p12");
 const PASSWORD: &str = "changeit";
@@ -20,7 +20,9 @@ fn test_sign_encrypt() {
         .find_cert_by_subject_str(RECIPIENT)
         .expect("No recipient certificate");
 
-    let _ = recipients[0].acquire_key(true).expect("No recipient private key");
+    let _ = recipients[0]
+        .acquire_key(true)
+        .expect("No recipient private key");
 
     let content = CmsContent::builder()
         .signer(signers.remove(0))

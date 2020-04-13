@@ -7,7 +7,7 @@ use std::{
 use log::{debug, error};
 use winapi::um::{errhandlingapi::GetLastError, wincrypt};
 
-use crate::cng::*;
+use crate::cert::*;
 use winapi::um::wincrypt::CryptDecryptAndVerifyMessageSignature;
 
 #[derive(Debug, Clone, PartialEq)]
