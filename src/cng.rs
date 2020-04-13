@@ -2,6 +2,7 @@ use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
+use winapi::um::wincrypt::CertDuplicateCertificateContext;
 use winapi::{
     shared::winerror::ERROR_SUCCESS,
     um::{
@@ -55,7 +56,6 @@ pub enum CertError {
     ContextError(u32),
     CngError(u32),
     NameError,
-    NotFound,
     InvalidStoreType,
     PinError,
 }
@@ -69,7 +69,6 @@ impl fmt::Display for CertError {
             CertError::ContextError(e) => write!(f, "Certificate context error: {:08x}", e),
             CertError::CngError(e) => write!(f, "CNG error: {:08x}", e),
             CertError::NameError => write!(f, "Name error"),
-            CertError::NotFound => write!(f, "Certificate not found in the certificate store"),
             CertError::InvalidStoreType => write!(f, "Invalid certificate store type"),
             CertError::PinError => write!(f, "PIN error"),
         }
@@ -363,26 +362,35 @@ impl CertStore {
         }
     }
 
-    pub fn find_cert_by_subject_str<S>(&self, subject: S) -> Result<CertContext, CertError>
+    pub fn find_cert_by_subject_str<S>(&self, subject: S) -> Result<Vec<CertContext>, CertError>
     where
         S: AsRef<str>,
     {
+        let mut certs = Vec::new();
         let subject = U16CString::from_str(subject)?;
-        let cert = unsafe {
-            CertFindCertificateInStore(
-                self.0,
-                MY_ENCODING_TYPE,
-                0,
-                CERT_FIND_SUBJECT_STR,
-                subject.as_ptr() as *const _,
-                ptr::null(),
-            )
-        };
-        if cert.is_null() {
-            Err(CertError::NotFound)
-        } else {
-            Ok(CertContext::new(cert))
+
+        let mut cert = ptr::null();
+
+        loop {
+            cert = unsafe {
+                CertFindCertificateInStore(
+                    self.0,
+                    MY_ENCODING_TYPE,
+                    0,
+                    CERT_FIND_SUBJECT_STR,
+                    subject.as_ptr() as *const _,
+                    cert,
+                )
+            };
+            if cert.is_null() {
+                break;
+            } else {
+                // increase refcount because it will be released by next call to CertFindCertificateInStore
+                let cert = unsafe { CertDuplicateCertificateContext(cert) };
+                certs.push(CertContext::new(cert))
+            }
         }
+        Ok(certs)
     }
 
     pub fn add_cert_context(&self, cert: &CertContext) -> Result<(), CertError> {

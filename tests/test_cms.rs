@@ -10,21 +10,21 @@ const MESSAGE: &str = "Security is our business";
 fn test_sign_encrypt() {
     let store = CertStore::from_pfx(PFX, PASSWORD).expect("Cannot open cert store");
 
-    let mut signer = store
+    let mut signers = store
         .find_cert_by_subject_str(SIGNER)
         .expect("No signer certificate");
 
-    let _ = signer.acquire_key(true).expect("No signer private key");
+    let _ = signers[0].acquire_key(true).expect("No signer private key");
 
-    let mut rcpt = store
+    let mut recipients = store
         .find_cert_by_subject_str(RECIPIENT)
         .expect("No recipient certificate");
 
-    let _ = rcpt.acquire_key(true).expect("No recipient private key");
+    let _ = recipients[0].acquire_key(true).expect("No recipient private key");
 
     let content = CmsContent::builder()
-        .signer(signer)
-        .recipients(vec![rcpt])
+        .signer(signers.remove(0))
+        .recipients(recipients)
         .build();
 
     let encrypted = content
