@@ -191,6 +191,7 @@ impl CmsContent {
                 Err(CmsError::ProcessingError(GetLastError()))
             } else {
                 debug!("Sign and encrypt succeeded");
+                encoded_blob.truncate(encoded_blob_size as _);
                 Ok(encoded_blob)
             }
         }
@@ -253,7 +254,9 @@ impl CmsContent {
                 return Err(CmsError::ProcessingError(GetLastError()));
             }
 
-            debug!("Decrypt and verify succeeded");
+            debug!("Decrypt and verify succeeded, output size: {}", message_size);
+            message.truncate(message_size as _);
+
             Ok(message)
         }
     }
