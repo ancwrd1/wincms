@@ -2,7 +2,7 @@
 name = "wincms"
 version = "0.1.0"
 authors = ["Dmitry Pankratov <dmitry@everyoneprint.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 winapi = { version = "0.3", features = ["wincrypt", "ncrypt", "errhandlingapi", "winerror"] }
