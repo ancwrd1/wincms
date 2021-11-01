@@ -1,53 +1,28 @@
-use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
+#![allow(non_camel_case_types)]
+
+use std::{
+    error,
+    ffi::{c_void, NulError},
+    fmt, mem, ptr,
+    rc::Rc,
+    str::FromStr,
+};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
-use winapi::{
-    shared::winerror::ERROR_SUCCESS,
-    um::{
-        errhandlingapi::GetLastError,
-        ncrypt::{
-            NCryptFreeObject, NCryptOpenStorageProvider, NCryptSetProperty, NCRYPT_HANDLE,
-            SECURITY_STATUS,
-        },
-        wincrypt::{
-            CertAddCertificateContextToStore, CertAddEncodedCertificateToStore, CertCloseStore,
-            CertDuplicateCertificateContext, CertFindCertificateInStore,
-            CertFreeCertificateContext, CertOpenStore, CertSetCertificateContextProperty,
-            CryptAcquireCertificatePrivateKey, PFXImportCertStore, CERT_FIND_SUBJECT_STR,
-            CERT_NCRYPT_KEY_HANDLE_PROP_ID, CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
-            CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_SYSTEM,
-            CERT_SYSTEM_STORE_CURRENT_SERVICE, CERT_SYSTEM_STORE_CURRENT_USER,
-            CERT_SYSTEM_STORE_LOCAL_MACHINE, CRYPT_ACQUIRE_CACHE_FLAG,
-            CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CRYPT_ACQUIRE_SILENT_FLAG, CRYPT_DATA_BLOB,
-            HCERTSTORE, PCCERT_CONTEXT, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
-        },
-    },
+use windows::Win32::{
+    Foundation::{GetLastError, ERROR_SUCCESS, PSTR, PWSTR},
+    Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
 };
 
-extern "system" {
-    fn NCryptOpenKey(
-        hprov: NCRYPT_HANDLE,
-        hkey: *mut NCRYPT_HANDLE,
-        key_name: *const u16,
-        key_spec: u32,
-        flags: u32,
-    ) -> SECURITY_STATUS;
-
-    fn NCryptGetProperty(
-        hobject: NCRYPT_HANDLE,
-        prop: *const u16,
-        output: *mut u8,
-        output_size: u32,
-        result: *mut u32,
-        flags: u32,
-    ) -> SECURITY_STATUS;
-}
-
-pub const MY_ENCODING_TYPE: u32 = PKCS_7_ASN_ENCODING | X509_ASN_ENCODING;
+pub const MY_ENCODING_TYPE: CERT_QUERY_ENCODING_TYPE =
+    CERT_QUERY_ENCODING_TYPE(PKCS_7_ASN_ENCODING.0 | X509_ASN_ENCODING.0);
 pub const NCRYPT_NAME_PROPERTY: &str = "Name";
 pub const NCRYPT_PIN_PROPERTY: &str = "SmartCardPin";
 pub const NCRYPT_PROVIDER_HANDLE_PROPERTY: &str = "Provider Handle";
+
+pub type NCRYPT_HANDLE = usize;
+pub type HCERTSTORE = *const c_void;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CertError {
@@ -111,17 +86,24 @@ impl NCryptKey {
         let prov_name = U16CString::from_str(provider_name)?;
 
         unsafe {
-            let result = NCryptOpenStorageProvider(&mut handle, prov_name.as_ptr(), 0) as u32;
+            let result =
+                NCryptOpenStorageProvider(&mut handle, PWSTR(prov_name.as_ptr() as _), 0) as u32;
 
-            if result == ERROR_SUCCESS {
+            if result == ERROR_SUCCESS.0 {
                 let mut hkey: NCRYPT_HANDLE = 0;
                 let key_name = U16CString::from_str(key_name)?;
 
-                let result = NCryptOpenKey(handle, &mut hkey, key_name.as_ptr(), 0, 0) as u32;
+                let result = NCryptOpenKey(
+                    handle,
+                    &mut hkey,
+                    PWSTR(key_name.as_ptr() as _),
+                    CERT_KEY_SPEC::default(),
+                    NCRYPT_FLAGS::default(),
+                ) as u32;
 
                 NCryptFreeObject(handle);
 
-                if result == ERROR_SUCCESS {
+                if result == ERROR_SUCCESS.0 {
                     Ok(NCryptKey::new(hkey))
                 } else {
                     error!("Cannot open key: {}", key_name.to_string_lossy());
@@ -144,13 +126,13 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
-                name.as_ptr(),
+                PWSTR(name.as_ptr() as _),
                 key_name_prop.as_mut_ptr(),
                 key_name_prop.len() as u32,
                 &mut result,
-                0,
+                OBJECT_SECURITY_INFORMATION::default(),
             ) as u32;
-            if rc != ERROR_SUCCESS {
+            if rc != ERROR_SUCCESS.0 {
                 error!("Cannot get key property: {}", NCRYPT_NAME_PROPERTY);
                 return Err(CertError::ContextError(rc));
             }
@@ -165,14 +147,14 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
-                handle_str.as_ptr(),
+                PWSTR(handle_str.as_ptr() as _),
                 &mut prov_handle as *mut _ as *mut _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
-                0,
+                OBJECT_SECURITY_INFORMATION::default(),
             ) as u32;
 
-            if rc != ERROR_SUCCESS {
+            if rc != ERROR_SUCCESS.0 {
                 error!(
                     "Cannot get key property: {}",
                     NCRYPT_PROVIDER_HANDLE_PROPERTY
@@ -185,16 +167,16 @@ impl NCryptKey {
 
             let rc = NCryptGetProperty(
                 prov_handle,
-                name_str.as_ptr(),
+                PWSTR(name_str.as_ptr() as _),
                 prov_name_prop.as_mut_ptr(),
                 prov_name_prop.len() as u32,
                 &mut result,
-                0,
+                OBJECT_SECURITY_INFORMATION::default(),
             ) as u32;
 
             NCryptFreeObject(prov_handle);
 
-            if rc != ERROR_SUCCESS {
+            if rc != ERROR_SUCCESS.0 {
                 error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
                 Err(CertError::ContextError(rc))
             } else {
@@ -210,14 +192,14 @@ impl NCryptKey {
         let result = unsafe {
             NCryptSetProperty(
                 self.as_ptr(),
-                pin_prop.as_ptr(),
+                PWSTR(pin_prop.as_ptr() as _),
                 pin_val.as_ptr() as *mut _,
                 pin.len() as u32,
-                0,
+                NCRYPT_FLAGS::default(),
             ) as u32
         };
 
-        if result != ERROR_SUCCESS {
+        if result != ERROR_SUCCESS.0 {
             error!("Cannot set pin code");
             Err(CertError::PinError)
         } else {
@@ -226,7 +208,7 @@ impl NCryptKey {
     }
 }
 
-pub struct CertContext(PCCERT_CONTEXT, Option<NCryptKey>);
+pub struct CertContext(*const CERT_CONTEXT, Option<NCryptKey>);
 
 impl Drop for CertContext {
     fn drop(&mut self) {
@@ -244,11 +226,11 @@ impl Clone for CertContext {
 }
 
 impl CertContext {
-    pub fn new(context: PCCERT_CONTEXT) -> CertContext {
+    pub fn new(context: *const CERT_CONTEXT) -> CertContext {
         CertContext(context, None)
     }
 
-    pub fn as_ptr(&self) -> PCCERT_CONTEXT {
+    pub fn as_ptr(&self) -> *const CERT_CONTEXT {
         self.0
     }
 
@@ -258,8 +240,9 @@ impl CertContext {
 
     pub fn acquire_key(&mut self, silent: bool) -> Result<NCryptKey, CertError> {
         let mut key: NCRYPT_HANDLE = 0;
-        let mut key_spec: u32 = 0;
-        let mut flags = CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG;
+        let mut key_spec = CERT_KEY_SPEC::default();
+        let mut flags =
+            CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_FLAGS(CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG);
         if silent {
             flags |= CRYPT_ACQUIRE_SILENT_FLAG;
         }
@@ -271,10 +254,11 @@ impl CertContext {
                 &mut key,
                 &mut key_spec,
                 ptr::null_mut(),
-            ) != 0;
+            )
+            .0 != 0;
             if !result {
                 error!("Cannot acquire certificate private key");
-                Err(CertError::ContextError(GetLastError()))
+                Err(CertError::ContextError(GetLastError().0))
             } else {
                 let retval = NCryptKey::new(key);
                 self.1 = Some(retval.clone());
@@ -304,9 +288,9 @@ pub enum CertStoreType {
 impl CertStoreType {
     fn to_flags(&self) -> u32 {
         match self {
-            CertStoreType::LocalMachine => CERT_SYSTEM_STORE_LOCAL_MACHINE,
-            CertStoreType::CurrentUser => CERT_SYSTEM_STORE_CURRENT_USER,
-            CertStoreType::CurrentService => CERT_SYSTEM_STORE_CURRENT_SERVICE,
+            CertStoreType::LocalMachine => CERT_SYSTEM_STORE_LOCAL_MACHINE_ID,
+            CertStoreType::CurrentUser => CERT_SYSTEM_STORE_CURRENT_USER_ID,
+            CertStoreType::CurrentService => CERT_SYSTEM_STORE_CURRENT_SERVICE_ID,
         }
     }
 }
@@ -336,16 +320,16 @@ impl CertStore {
         let store_name = U16CString::from_str(store_name)?;
         let handle = unsafe {
             CertOpenStore(
-                CERT_STORE_PROV_SYSTEM,
+                PSTR(10 as _),
+                CERT_QUERY_ENCODING_TYPE::default(),
                 0,
-                0,
-                store_type.to_flags() | CERT_STORE_OPEN_EXISTING_FLAG,
+                CERT_OPEN_STORE_FLAGS(store_type.to_flags()) | CERT_STORE_OPEN_EXISTING_FLAG,
                 store_name.as_ptr() as *const _,
             )
         };
         if handle.is_null() {
             error!("Cannot open certificate store");
-            Err(CertError::StoreError(unsafe { GetLastError() }))
+            Err(CertError::StoreError(unsafe { GetLastError().0 }))
         } else {
             Ok(CertStore(handle))
         }
@@ -353,15 +337,19 @@ impl CertStore {
 
     pub fn from_pfx(data: &[u8], password: &str) -> Result<CertStore, CertError> {
         unsafe {
-            let mut blob = CRYPT_DATA_BLOB {
+            let mut blob = CRYPTOAPI_BLOB {
                 cbData: data.len() as u32,
                 pbData: data.as_ptr() as *const _ as *mut _,
             };
             let password = U16CString::from_str(password)?;
 
-            let store = PFXImportCertStore(&mut blob, password.as_ptr(), 0);
+            let store = PFXImportCertStore(
+                &mut blob,
+                PWSTR(password.as_ptr() as _),
+                CRYPT_KEY_FLAGS::default(),
+            );
             if store.is_null() {
-                Err(CertError::StoreError(GetLastError()))
+                Err(CertError::StoreError(GetLastError().0))
             } else {
                 Ok(CertStore(store))
             }
@@ -381,7 +369,7 @@ impl CertStore {
             cert = unsafe {
                 CertFindCertificateInStore(
                     self.0,
-                    MY_ENCODING_TYPE,
+                    MY_ENCODING_TYPE.0,
                     0,
                     CERT_FIND_SUBJECT_STR,
                     subject.as_ptr() as *const _,
@@ -406,10 +394,11 @@ impl CertStore {
                 cert.as_ptr(),
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
                 ptr::null_mut(),
-            ) != 0;
+            )
+            .0 != 0;
             if !result {
                 error!("Cannot add certificate context");
-                Err(CertError::StoreError(GetLastError()))
+                Err(CertError::StoreError(GetLastError().0))
             } else {
                 Ok(())
             }
@@ -417,21 +406,22 @@ impl CertStore {
     }
 
     pub fn add_cert(&self, cert: &[u8], key: Option<NCryptKey>) -> Result<(), CertError> {
-        let mut context: PCCERT_CONTEXT = ptr::null_mut();
+        let mut context: *mut CERT_CONTEXT = ptr::null_mut();
 
         unsafe {
             let result = CertAddEncodedCertificateToStore(
                 self.0,
-                MY_ENCODING_TYPE,
+                MY_ENCODING_TYPE.0,
                 cert.as_ptr(),
                 cert.len() as u32,
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
                 &mut context,
-            ) != 0;
+            )
+            .0 != 0;
 
             if !result {
                 error!("Cannot add certificate");
-                return Err(CertError::StoreError(GetLastError()));
+                return Err(CertError::StoreError(GetLastError().0));
             }
 
             let mut context = CertContext::new(context);
@@ -443,11 +433,12 @@ impl CertStore {
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
                     key.as_ptr() as *const _,
-                ) != 0;
+                )
+                .0 != 0;
 
                 if !result {
                     error!("Cannot set certificate private key");
-                    return Err(CertError::StoreError(GetLastError()));
+                    return Err(CertError::StoreError(GetLastError().0));
                 }
             }
         }
