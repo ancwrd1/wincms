@@ -136,7 +136,7 @@ impl NCryptKey {
                 error!("Cannot get key property: {}", NCRYPT_NAME_PROPERTY);
                 return Err(CertError::ContextError(rc));
             }
-            Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as *const _).to_string_lossy())
+            Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as _).to_string_lossy())
         }
     }
 
@@ -148,7 +148,7 @@ impl NCryptKey {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
                 PWSTR(handle_str.as_ptr() as _),
-                &mut prov_handle as *mut _ as *mut _,
+                &mut prov_handle as *mut _ as _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
@@ -193,7 +193,7 @@ impl NCryptKey {
             NCryptSetProperty(
                 self.as_ptr(),
                 PWSTR(pin_prop.as_ptr() as _),
-                pin_val.as_ptr() as *mut _,
+                pin_val.as_ptr() as _,
                 pin.len() as u32,
                 NCRYPT_FLAGS::default(),
             ) as u32
@@ -286,7 +286,7 @@ pub enum CertStoreType {
 }
 
 impl CertStoreType {
-    fn to_flags(&self) -> u32 {
+    fn as_flags(&self) -> u32 {
         match self {
             CertStoreType::LocalMachine => CERT_SYSTEM_STORE_LOCAL_MACHINE_ID,
             CertStoreType::CurrentUser => CERT_SYSTEM_STORE_CURRENT_USER_ID,
@@ -323,8 +323,8 @@ impl CertStore {
                 PSTR(10 as _),
                 CERT_QUERY_ENCODING_TYPE::default(),
                 0,
-                CERT_OPEN_STORE_FLAGS(store_type.to_flags()) | CERT_STORE_OPEN_EXISTING_FLAG,
-                store_name.as_ptr() as *const _,
+                CERT_OPEN_STORE_FLAGS(store_type.as_flags()) | CERT_STORE_OPEN_EXISTING_FLAG,
+                store_name.as_ptr() as _,
             )
         };
         if handle.is_null() {
@@ -337,14 +337,14 @@ impl CertStore {
 
     pub fn from_pfx(data: &[u8], password: &str) -> Result<CertStore, CertError> {
         unsafe {
-            let mut blob = CRYPTOAPI_BLOB {
+            let blob = CRYPTOAPI_BLOB {
                 cbData: data.len() as u32,
-                pbData: data.as_ptr() as *const _ as *mut _,
+                pbData: data.as_ptr() as _,
             };
             let password = U16CString::from_str(password)?;
 
             let store = PFXImportCertStore(
-                &mut blob,
+                &blob,
                 PWSTR(password.as_ptr() as _),
                 CRYPT_KEY_FLAGS::default(),
             );
@@ -372,7 +372,7 @@ impl CertStore {
                     MY_ENCODING_TYPE.0,
                     0,
                     CERT_FIND_SUBJECT_STR,
-                    subject.as_ptr() as *const _,
+                    subject.as_ptr() as _,
                     cert,
                 )
             };
@@ -432,7 +432,7 @@ impl CertStore {
                     context.as_ptr(),
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
-                    key.as_ptr() as *const _,
+                    key.as_ptr() as _,
                 )
                 .0 != 0;
 

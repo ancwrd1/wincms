@@ -123,7 +123,7 @@ impl CmsContent {
         unsafe {
             let mut hash_alg = mem::zeroed::<CRYPT_ALGORITHM_IDENTIFIER>();
             let alg_str = CString::new(self.0.hash_algorithm.as_bytes())?;
-            hash_alg.pszObjId = PSTR(alg_str.as_ptr() as *mut _);
+            hash_alg.pszObjId = PSTR(alg_str.as_ptr() as _);
 
             debug!("Using hash algorithm: {}", self.0.hash_algorithm);
 
@@ -139,7 +139,7 @@ impl CmsContent {
 
             let mut crypt_alg = mem::zeroed::<CRYPT_ALGORITHM_IDENTIFIER>();
             let alg_str = CString::new(self.0.encrypt_algorithm.as_bytes())?;
-            crypt_alg.pszObjId = PSTR(alg_str.as_ptr() as *mut _);
+            crypt_alg.pszObjId = PSTR(alg_str.as_ptr() as _);
 
             debug!("Using encryption algorithm: {}", self.0.encrypt_algorithm);
 
@@ -148,7 +148,7 @@ impl CmsContent {
             encrypt_param.dwMsgEncodingType = MY_ENCODING_TYPE.0;
             encrypt_param.ContentEncryptionAlgorithm = crypt_alg;
 
-            let mut recipients = self
+            let recipients = self
                 .0
                 .recipients
                 .iter()
@@ -157,10 +157,10 @@ impl CmsContent {
 
             let mut encoded_blob_size: u32 = 0;
             let result = CryptSignAndEncryptMessage(
-                &mut sign_param,
-                &mut encrypt_param as *mut _ as *mut _,
+                &sign_param,
+                &encrypt_param,
                 self.0.recipients.len() as u32,
-                recipients.as_mut_ptr(),
+                recipients.as_ptr(),
                 data.as_ptr(),
                 data.len() as u32,
                 ptr::null_mut(),
@@ -185,10 +185,10 @@ impl CmsContent {
             let mut encoded_blob = vec![0u8; encoded_blob_size as usize];
 
             let result = CryptSignAndEncryptMessage(
-                &mut sign_param,
-                &mut encrypt_param as *mut _ as *mut _,
+                &sign_param,
+                &encrypt_param,
                 self.0.recipients.len() as u32,
-                recipients.as_mut_ptr(),
+                recipients.as_ptr(),
                 data.as_ptr(),
                 data.len() as u32,
                 encoded_blob.as_mut_ptr(),
@@ -223,8 +223,8 @@ impl CmsContent {
             let mut message_size = 0u32;
 
             let rc = CryptDecryptAndVerifyMessageSignature(
-                &mut decrypt_param,
-                &mut verify_param,
+                &decrypt_param,
+                &verify_param,
                 0,
                 data.as_ptr(),
                 data.len() as u32,
@@ -246,8 +246,8 @@ impl CmsContent {
             let mut message = vec![0u8; message_size as usize];
 
             let rc = CryptDecryptAndVerifyMessageSignature(
-                &mut decrypt_param,
-                &mut verify_param,
+                &decrypt_param,
+                &verify_param,
                 0,
                 data.as_ptr(),
                 data.len() as u32,
