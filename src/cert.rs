@@ -11,7 +11,7 @@ use std::{
 use log::error;
 use widestring::{U16CStr, U16CString};
 use windows::Win32::{
-    Foundation::{GetLastError, ERROR_SUCCESS, PSTR, PWSTR},
+    Foundation::{GetLastError, ERROR_SUCCESS, PSTR},
     Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
 };
 
@@ -83,20 +83,17 @@ impl NCryptKey {
 
     pub fn open(provider_name: &str, key_name: &str) -> Result<NCryptKey, CertError> {
         let mut handle: NCRYPT_HANDLE = 0;
-        let prov_name = U16CString::from_str(provider_name)?;
 
         unsafe {
-            let result =
-                NCryptOpenStorageProvider(&mut handle, PWSTR(prov_name.as_ptr() as _), 0) as u32;
+            let result = NCryptOpenStorageProvider(&mut handle, provider_name, 0) as u32;
 
             if result == ERROR_SUCCESS.0 {
                 let mut hkey: NCRYPT_HANDLE = 0;
-                let key_name = U16CString::from_str(key_name)?;
 
                 let result = NCryptOpenKey(
                     handle,
                     &mut hkey,
-                    PWSTR(key_name.as_ptr() as _),
+                    key_name,
                     CERT_KEY_SPEC::default(),
                     NCRYPT_FLAGS::default(),
                 ) as u32;
@@ -106,27 +103,23 @@ impl NCryptKey {
                 if result == ERROR_SUCCESS.0 {
                     Ok(NCryptKey::new(hkey))
                 } else {
-                    error!("Cannot open key: {}", key_name.to_string_lossy());
+                    error!("Cannot open key: {}", key_name);
                     Err(CertError::CngError(result))
                 }
             } else {
-                error!(
-                    "Cannot open storage provider: {}",
-                    prov_name.to_string_lossy()
-                );
+                error!("Cannot open storage provider: {}", provider_name);
                 Err(CertError::CngError(result))
             }
         }
     }
 
     pub fn get_name(&self) -> Result<String, CertError> {
-        let name = U16CString::from_str(NCRYPT_NAME_PROPERTY)?;
         let mut key_name_prop = vec![0u8; 1024];
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
-                PWSTR(name.as_ptr() as _),
+                NCRYPT_NAME_PROPERTY,
                 key_name_prop.as_mut_ptr(),
                 key_name_prop.len() as u32,
                 &mut result,
@@ -141,13 +134,12 @@ impl NCryptKey {
     }
 
     pub fn get_provider(&self) -> Result<String, CertError> {
-        let handle_str = U16CString::from_str(NCRYPT_PROVIDER_HANDLE_PROPERTY)?;
         let mut prov_handle: NCRYPT_HANDLE = 0;
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
                 self.as_ptr(),
-                PWSTR(handle_str.as_ptr() as _),
+                NCRYPT_PROVIDER_HANDLE_PROPERTY,
                 &mut prov_handle as *mut _ as _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
@@ -162,12 +154,11 @@ impl NCryptKey {
                 return Err(CertError::ContextError(rc));
             }
 
-            let name_str = U16CString::from_str(NCRYPT_NAME_PROPERTY)?;
             let mut prov_name_prop = vec![0u8; 1024];
 
             let rc = NCryptGetProperty(
                 prov_handle,
-                PWSTR(name_str.as_ptr() as _),
+                NCRYPT_NAME_PROPERTY,
                 prov_name_prop.as_mut_ptr(),
                 prov_name_prop.len() as u32,
                 &mut result,
@@ -186,13 +177,12 @@ impl NCryptKey {
     }
 
     pub fn set_pin(&self, pin: &str) -> Result<(), CertError> {
-        let pin_prop = U16CString::from_str(NCRYPT_PIN_PROPERTY)?;
         let pin_val = U16CString::from_str(&pin)?;
 
         let result = unsafe {
             NCryptSetProperty(
                 self.as_ptr(),
-                PWSTR(pin_prop.as_ptr() as _),
+                NCRYPT_PIN_PROPERTY,
                 pin_val.as_ptr() as _,
                 pin.len() as u32,
                 NCRYPT_FLAGS::default(),
@@ -341,13 +331,8 @@ impl CertStore {
                 cbData: data.len() as u32,
                 pbData: data.as_ptr() as _,
             };
-            let password = U16CString::from_str(password)?;
 
-            let store = PFXImportCertStore(
-                &blob,
-                PWSTR(password.as_ptr() as _),
-                CRYPT_KEY_FLAGS::default(),
-            );
+            let store = PFXImportCertStore(&blob, password, CRYPT_KEY_FLAGS::default());
             if store.is_null() {
                 Err(CertError::StoreError(GetLastError().0))
             } else {
