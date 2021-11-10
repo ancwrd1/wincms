@@ -5,6 +5,6 @@ authors = ["Dmitry Pankratov <dmitry@everyoneprint.com>"]
 edition = "2021"
 
 [dependencies]
-windows = { version = "0.25", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows = { version = "0.26", features = ["std", "Win32_Foundation", "Win32_Security_Cryptography"] }
 widestring = "0.5"
 log = "0.4"
