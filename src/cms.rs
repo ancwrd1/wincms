@@ -37,8 +37,8 @@ impl fmt::Display for CmsError {
     }
 }
 
-impl From<widestring::NulError<u16>> for CmsError {
-    fn from(_: widestring::NulError<u16>) -> Self {
+impl From<widestring::error::NulError<u16>> for CmsError {
+    fn from(_: widestring::error::NulError<u16>) -> Self {
         CmsError::NameError
     }
 }

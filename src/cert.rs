@@ -49,8 +49,8 @@ impl fmt::Display for CertError {
     }
 }
 
-impl From<widestring::NulError<u16>> for CertError {
-    fn from(_: widestring::NulError<u16>) -> Self {
+impl From<widestring::error::ContainsNul<u16>> for CertError {
+    fn from(_: widestring::error::ContainsNul<u16>) -> Self {
         CertError::NameError
     }
 }
