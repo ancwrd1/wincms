@@ -1,12 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use std::{
-    error,
-    ffi::{c_void, NulError},
-    fmt, mem, ptr,
-    rc::Rc,
-    str::FromStr,
-};
+use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
@@ -17,12 +11,6 @@ use windows::Win32::{
 
 pub const MY_ENCODING_TYPE: CERT_QUERY_ENCODING_TYPE =
     CERT_QUERY_ENCODING_TYPE(PKCS_7_ASN_ENCODING.0 | X509_ASN_ENCODING.0);
-pub const NCRYPT_NAME_PROPERTY: &str = "Name";
-pub const NCRYPT_PIN_PROPERTY: &str = "SmartCardPin";
-pub const NCRYPT_PROVIDER_HANDLE_PROPERTY: &str = "Provider Handle";
-
-pub type NCRYPT_HANDLE = usize;
-pub type HCERTSTORE = *const c_void;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CertError {
@@ -82,13 +70,13 @@ impl NCryptKey {
     }
 
     pub fn open(provider_name: &str, key_name: &str) -> Result<NCryptKey, CertError> {
-        let mut handle: NCRYPT_HANDLE = 0;
+        let mut handle = NCRYPT_PROV_HANDLE::default();
 
         unsafe {
             let result = NCryptOpenStorageProvider(&mut handle, provider_name, 0) as u32;
 
             if result == ERROR_SUCCESS.0 {
-                let mut hkey: NCRYPT_HANDLE = 0;
+                let mut hkey = NCRYPT_KEY_HANDLE::default();
 
                 let result = NCryptOpenKey(
                     handle,
@@ -98,10 +86,10 @@ impl NCryptKey {
                     NCRYPT_FLAGS::default(),
                 ) as u32;
 
-                NCryptFreeObject(handle);
+                NCryptFreeObject(NCRYPT_HANDLE(handle.0));
 
                 if result == ERROR_SUCCESS.0 {
-                    Ok(NCryptKey::new(hkey))
+                    Ok(NCryptKey::new(NCRYPT_HANDLE(hkey.0)))
                 } else {
                     error!("Cannot open key: {}", key_name);
                     Err(CertError::CngError(result))
@@ -134,7 +122,7 @@ impl NCryptKey {
     }
 
     pub fn get_provider(&self) -> Result<String, CertError> {
-        let mut prov_handle: NCRYPT_HANDLE = 0;
+        let mut prov_handle = NCRYPT_HANDLE::default();
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
@@ -229,7 +217,7 @@ impl CertContext {
     }
 
     pub fn acquire_key(&mut self, silent: bool) -> Result<NCryptKey, CertError> {
-        let mut key: NCRYPT_HANDLE = 0;
+        let mut key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
         let mut key_spec = CERT_KEY_SPEC::default();
         let mut flags =
             CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_FLAGS(CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG);
@@ -250,7 +238,7 @@ impl CertContext {
                 error!("Cannot acquire certificate private key");
                 Err(CertError::ContextError(GetLastError().0))
             } else {
-                let retval = NCryptKey::new(key);
+                let retval = NCryptKey::new(NCRYPT_HANDLE(key.0));
                 self.1 = Some(retval.clone());
                 Ok(retval)
             }
@@ -312,12 +300,12 @@ impl CertStore {
             CertOpenStore(
                 PSTR(10 as _),
                 CERT_QUERY_ENCODING_TYPE::default(),
-                0,
-                CERT_OPEN_STORE_FLAGS(store_type.as_flags()) | CERT_STORE_OPEN_EXISTING_FLAG,
+                HCRYPTPROV_LEGACY::default(),
+                CERT_OPEN_STORE_FLAGS(store_type.as_flags() | CERT_STORE_OPEN_EXISTING_FLAG.0),
                 store_name.as_ptr() as _,
             )
         };
-        if handle.is_null() {
+        if handle.is_invalid() {
             error!("Cannot open certificate store");
             Err(CertError::StoreError(unsafe { GetLastError().0 }))
         } else {
@@ -333,7 +321,7 @@ impl CertStore {
             };
 
             let store = PFXImportCertStore(&blob, password, CRYPT_KEY_FLAGS::default());
-            if store.is_null() {
+            if store.is_invalid() {
                 Err(CertError::StoreError(GetLastError().0))
             } else {
                 Ok(CertStore(store))
@@ -417,7 +405,7 @@ impl CertStore {
                     context.as_ptr(),
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
-                    key.as_ptr() as _,
+                    key.as_ptr().0 as _,
                 )
                 .0 != 0;
 
