@@ -206,7 +206,7 @@ impl CmsContent {
 
     pub fn decrypt_and_verify(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
         unsafe {
-            let mut stores = [store.as_ptr()];
+            let mut stores = [store.handle()];
             let mut decrypt_param = mem::zeroed::<CRYPT_DECRYPT_MESSAGE_PARA>();
             decrypt_param.cbSize = mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32;
             decrypt_param.dwMsgAndCertEncodingType = MY_ENCODING_TYPE.0;

@@ -1,5 +1,3 @@
-#![allow(non_camel_case_types)]
-
 use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
@@ -61,15 +59,15 @@ impl Drop for InnerKey {
 pub struct NCryptKey(Rc<InnerKey>);
 
 impl NCryptKey {
-    pub fn new(handle: NCRYPT_HANDLE) -> NCryptKey {
+    pub fn from_handle(handle: NCRYPT_HANDLE) -> Self {
         NCryptKey(Rc::new(InnerKey(handle)))
     }
 
-    pub fn as_ptr(&self) -> NCRYPT_HANDLE {
+    pub fn handle(&self) -> NCRYPT_HANDLE {
         (self.0).0
     }
 
-    pub fn open(provider_name: &str, key_name: &str) -> Result<NCryptKey, CertError> {
+    pub fn open(provider_name: &str, key_name: &str) -> Result<Self, CertError> {
         let mut handle = NCRYPT_PROV_HANDLE::default();
 
         unsafe {
@@ -89,7 +87,7 @@ impl NCryptKey {
                 NCryptFreeObject(NCRYPT_HANDLE(handle.0));
 
                 if result == ERROR_SUCCESS.0 {
-                    Ok(NCryptKey::new(NCRYPT_HANDLE(hkey.0)))
+                    Ok(NCryptKey::from_handle(NCRYPT_HANDLE(hkey.0)))
                 } else {
                     error!("Cannot open key: {}", key_name);
                     Err(CertError::CngError(result))
@@ -106,7 +104,7 @@ impl NCryptKey {
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
-                self.as_ptr(),
+                self.handle(),
                 NCRYPT_NAME_PROPERTY,
                 key_name_prop.as_mut_ptr(),
                 key_name_prop.len() as u32,
@@ -126,7 +124,7 @@ impl NCryptKey {
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
-                self.as_ptr(),
+                self.handle(),
                 NCRYPT_PROVIDER_HANDLE_PROPERTY,
                 &mut prov_handle as *mut _ as _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
@@ -169,7 +167,7 @@ impl NCryptKey {
 
         let result = unsafe {
             NCryptSetProperty(
-                self.as_ptr(),
+                self.handle(),
                 NCRYPT_PIN_PROPERTY,
                 pin_val.as_ptr() as _,
                 pin.len() as u32,
@@ -204,7 +202,7 @@ impl Clone for CertContext {
 }
 
 impl CertContext {
-    pub fn new(context: *const CERT_CONTEXT) -> CertContext {
+    pub fn new(context: *const CERT_CONTEXT) -> Self {
         CertContext(context, None)
     }
 
@@ -238,7 +236,7 @@ impl CertContext {
                 error!("Cannot acquire certificate private key");
                 Err(CertError::ContextError(GetLastError().0))
             } else {
-                let retval = NCryptKey::new(NCRYPT_HANDLE(key.0));
+                let retval = NCryptKey::from_handle(NCRYPT_HANDLE(key.0));
                 self.1 = Some(retval.clone());
                 Ok(retval)
             }
@@ -290,7 +288,7 @@ impl FromStr for CertStoreType {
 pub struct CertStore(HCERTSTORE);
 
 impl CertStore {
-    pub fn as_ptr(&self) -> HCERTSTORE {
+    pub fn handle(&self) -> HCERTSTORE {
         self.0
     }
 
@@ -405,7 +403,7 @@ impl CertStore {
                     context.as_ptr(),
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
-                    key.as_ptr().0 as _,
+                    key.handle().0 as _,
                 )
                 .0 != 0;
 
