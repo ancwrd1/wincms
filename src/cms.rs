@@ -97,9 +97,6 @@ impl CmsContentBuilder {
     }
 }
 
-const OID_RSA_SHA256RSA: &str = "1.2.840.113549.1.1.11";
-const OID_NIST_AES256_CBC: &str = "2.16.840.1.101.3.4.1.42";
-
 pub struct CmsContent(CmsContentBuilder);
 
 impl CmsContent {
@@ -107,8 +104,8 @@ impl CmsContent {
         CmsContentBuilder {
             signer: None,
             recipients: Vec::new(),
-            hash_algorithm: OID_RSA_SHA256RSA.to_owned(),
-            encrypt_algorithm: OID_NIST_AES256_CBC.to_owned(),
+            hash_algorithm: szOID_RSA_SHA256RSA.to_owned(),
+            encrypt_algorithm: szOID_NIST_AES256_CBC.to_owned(),
         }
     }
 
