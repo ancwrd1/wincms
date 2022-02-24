@@ -2,9 +2,12 @@ use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
-use windows::Win32::{
-    Foundation::{GetLastError, ERROR_SUCCESS, PSTR},
-    Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
+use windows::{
+    core::PCSTR,
+    Win32::{
+        Foundation::{GetLastError, ERROR_SUCCESS},
+        Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
+    },
 };
 
 pub const MY_ENCODING_TYPE: CERT_QUERY_ENCODING_TYPE =
@@ -296,7 +299,7 @@ impl CertStore {
         let store_name = U16CString::from_str(store_name)?;
         let handle = unsafe {
             CertOpenStore(
-                PSTR(10 as _),
+                PCSTR(10 as _),
                 CERT_QUERY_ENCODING_TYPE::default(),
                 HCRYPTPROV_LEGACY::default(),
                 CERT_OPEN_STORE_FLAGS(store_type.as_flags() | CERT_STORE_OPEN_EXISTING_FLAG.0),

@@ -5,9 +5,9 @@ use std::{
 };
 
 use log::{debug, error};
-use windows::Win32::{
-    Foundation::{GetLastError, PSTR},
-    Security::Cryptography::*,
+use windows::{
+    core::PSTR,
+    Win32::{Foundation::GetLastError, Security::Cryptography::*},
 };
 
 use crate::cert::*;
