@@ -156,8 +156,7 @@ impl CmsContent {
             let result = CryptSignAndEncryptMessage(
                 &sign_param,
                 &encrypt_param,
-                self.0.recipients.len() as u32,
-                recipients.as_ptr(),
+                &recipients,
                 data.as_ptr(),
                 data.len() as u32,
                 ptr::null_mut(),
@@ -184,8 +183,7 @@ impl CmsContent {
             let result = CryptSignAndEncryptMessage(
                 &sign_param,
                 &encrypt_param,
-                self.0.recipients.len() as u32,
-                recipients.as_ptr(),
+                &recipients,
                 data.as_ptr(),
                 data.len() as u32,
                 encoded_blob.as_mut_ptr(),

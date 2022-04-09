@@ -5,7 +5,7 @@ use widestring::{U16CStr, U16CString};
 use windows::{
     core::PCSTR,
     Win32::{
-        Foundation::{GetLastError, ERROR_SUCCESS},
+        Foundation::GetLastError,
         Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
     },
 };
@@ -54,7 +54,9 @@ struct InnerKey(NCRYPT_HANDLE);
 
 impl Drop for InnerKey {
     fn drop(&mut self) {
-        unsafe { NCryptFreeObject(self.0) };
+        unsafe {
+            let _ = NCryptFreeObject(self.0);
+        };
     }
 }
 
@@ -74,30 +76,32 @@ impl NCryptKey {
         let mut handle = NCRYPT_PROV_HANDLE::default();
 
         unsafe {
-            let result = NCryptOpenStorageProvider(&mut handle, provider_name, 0) as u32;
+            match NCryptOpenStorageProvider(&mut handle, provider_name, 0) {
+                Ok(_) => {
+                    let mut hkey = NCRYPT_KEY_HANDLE::default();
 
-            if result == ERROR_SUCCESS.0 {
-                let mut hkey = NCRYPT_KEY_HANDLE::default();
+                    let result = NCryptOpenKey(
+                        handle,
+                        &mut hkey,
+                        key_name,
+                        CERT_KEY_SPEC::default(),
+                        NCRYPT_FLAGS::default(),
+                    );
 
-                let result = NCryptOpenKey(
-                    handle,
-                    &mut hkey,
-                    key_name,
-                    CERT_KEY_SPEC::default(),
-                    NCRYPT_FLAGS::default(),
-                ) as u32;
+                    let _ = NCryptFreeObject(NCRYPT_HANDLE(handle.0));
 
-                NCryptFreeObject(NCRYPT_HANDLE(handle.0));
-
-                if result == ERROR_SUCCESS.0 {
-                    Ok(NCryptKey::from_handle(NCRYPT_HANDLE(hkey.0)))
-                } else {
-                    error!("Cannot open key: {}", key_name);
-                    Err(CertError::CngError(result))
+                    match result {
+                        Ok(_) => Ok(NCryptKey::from_handle(NCRYPT_HANDLE(hkey.0))),
+                        Err(e) => {
+                            error!("Cannot open key: {}", key_name);
+                            Err(CertError::CngError(e.code().0 as _))
+                        }
+                    }
                 }
-            } else {
-                error!("Cannot open storage provider: {}", provider_name);
-                Err(CertError::CngError(result))
+                Err(e) => {
+                    error!("Cannot open storage provider: {}", provider_name);
+                    Err(CertError::CngError(e.code().0 as _))
+                }
             }
         }
     }
@@ -113,10 +117,10 @@ impl NCryptKey {
                 key_name_prop.len() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
-            ) as u32;
-            if rc != ERROR_SUCCESS.0 {
+            );
+            if let Err(e) = rc {
                 error!("Cannot get key property: {}", NCRYPT_NAME_PROPERTY);
-                return Err(CertError::ContextError(rc));
+                return Err(CertError::ContextError(e.code().0 as _));
             }
             Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as _).to_string_lossy())
         }
@@ -133,14 +137,14 @@ impl NCryptKey {
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
-            ) as u32;
+            );
 
-            if rc != ERROR_SUCCESS.0 {
+            if let Err(e) = rc {
                 error!(
                     "Cannot get key property: {}",
                     NCRYPT_PROVIDER_HANDLE_PROPERTY
                 );
-                return Err(CertError::ContextError(rc));
+                return Err(CertError::ContextError(e.code().0 as _));
             }
 
             let mut prov_name_prop = vec![0u8; 1024];
@@ -152,15 +156,18 @@ impl NCryptKey {
                 prov_name_prop.len() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
-            ) as u32;
+            );
 
-            NCryptFreeObject(prov_handle);
+            let _ = NCryptFreeObject(prov_handle);
 
-            if rc != ERROR_SUCCESS.0 {
-                error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
-                Err(CertError::ContextError(rc))
-            } else {
-                Ok(U16CStr::from_ptr_str(prov_name_prop.as_ptr() as *const _).to_string_lossy())
+            match rc {
+                Ok(_) => Ok(
+                    U16CStr::from_ptr_str(prov_name_prop.as_ptr() as *const _).to_string_lossy()
+                ),
+                Err(e) => {
+                    error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
+                    Err(CertError::ContextError(e.code().0 as _))
+                }
             }
         }
     }
@@ -175,14 +182,15 @@ impl NCryptKey {
                 pin_val.as_ptr() as _,
                 pin.len() as u32,
                 NCRYPT_FLAGS::default(),
-            ) as u32
+            )
         };
 
-        if result != ERROR_SUCCESS.0 {
-            error!("Cannot set pin code");
-            Err(CertError::PinError)
-        } else {
-            Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                error!("Cannot set pin code");
+                Err(CertError::PinError)
+            }
         }
     }
 }
@@ -306,11 +314,12 @@ impl CertStore {
                 store_name.as_ptr() as _,
             )
         };
-        if handle.is_invalid() {
-            error!("Cannot open certificate store");
-            Err(CertError::StoreError(unsafe { GetLastError().0 }))
-        } else {
-            Ok(CertStore(handle))
+        match handle {
+            Ok(handle) => Ok(CertStore(handle)),
+            Err(e) => {
+                error!("Cannot open certificate store");
+                Err(CertError::StoreError(e.code().0 as _))
+            }
         }
     }
 
@@ -322,10 +331,9 @@ impl CertStore {
             };
 
             let store = PFXImportCertStore(&blob, password, CRYPT_KEY_FLAGS::default());
-            if store.is_invalid() {
-                Err(CertError::StoreError(GetLastError().0))
-            } else {
-                Ok(CertStore(store))
+            match store {
+                Ok(handle) => Ok(CertStore(handle)),
+                Err(e) => Err(CertError::StoreError(e.code().0 as _)),
             }
         }
     }
