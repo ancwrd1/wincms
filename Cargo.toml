@@ -1,7 +1,6 @@
 [package]
 name = "wincms"
 version = "0.1.0"
-authors = ["Dmitry Pankratov <dmitry@everyoneprint.com>"]
 edition = "2021"
 
 [dependencies]

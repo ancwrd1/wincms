@@ -242,7 +242,7 @@ impl CertContext {
                 &mut key_spec,
                 ptr::null_mut(),
             )
-            .0 != 0;
+            .as_bool();
             if !result {
                 error!("Cannot acquire certificate private key");
                 Err(CertError::ContextError(GetLastError().0))
@@ -377,7 +377,7 @@ impl CertStore {
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
                 ptr::null_mut(),
             )
-            .0 != 0;
+            .as_bool();
             if !result {
                 error!("Cannot add certificate context");
                 Err(CertError::StoreError(GetLastError().0))
@@ -399,7 +399,7 @@ impl CertStore {
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
                 &mut context,
             )
-            .0 != 0;
+            .as_bool();
 
             if !result {
                 error!("Cannot add certificate");
@@ -416,7 +416,7 @@ impl CertStore {
                     0,
                     key.handle().0 as _,
                 )
-                .0 != 0;
+                .as_bool();
 
                 if !result {
                     error!("Cannot set certificate private key");
