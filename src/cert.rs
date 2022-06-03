@@ -197,6 +197,9 @@ impl NCryptKey {
 
 pub struct CertContext(*const CERT_CONTEXT, Option<NCryptKey>);
 
+unsafe impl Send for CertContext {}
+unsafe impl Sync for CertContext {}
+
 impl Drop for CertContext {
     fn drop(&mut self) {
         unsafe { CertFreeCertificateContext(self.0) };
@@ -297,6 +300,9 @@ impl FromStr for CertStoreType {
 }
 
 pub struct CertStore(HCERTSTORE);
+
+unsafe impl Send for CertStore {}
+unsafe impl Sync for CertStore {}
 
 impl CertStore {
     pub fn handle(&self) -> HCERTSTORE {
