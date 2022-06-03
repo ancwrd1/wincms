@@ -1,4 +1,4 @@
-use std::{error, ffi::NulError, fmt, mem, ptr, rc::Rc, str::FromStr};
+use std::{error, ffi::NulError, fmt, mem, ptr, str::FromStr, sync::Arc};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
@@ -61,11 +61,11 @@ impl Drop for InnerKey {
 }
 
 #[derive(Clone)]
-pub struct NCryptKey(Rc<InnerKey>);
+pub struct NCryptKey(Arc<InnerKey>);
 
 impl NCryptKey {
     pub fn from_handle(handle: NCRYPT_HANDLE) -> Self {
-        NCryptKey(Rc::new(InnerKey(handle)))
+        NCryptKey(Arc::new(InnerKey(handle)))
     }
 
     pub fn handle(&self) -> NCRYPT_HANDLE {
