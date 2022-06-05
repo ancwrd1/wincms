@@ -8,7 +8,7 @@ const MESSAGE: &str = "Security is our business";
 
 #[test]
 fn test_sign_encrypt() {
-    let store = CertStore::from_pfx(PFX, PASSWORD).expect("Cannot open cert store");
+    let store = CertStore::from_pkcs12(PFX, PASSWORD).expect("Cannot open cert store");
 
     let mut signers = store
         .find_cert_by_subject_str(SIGNER)

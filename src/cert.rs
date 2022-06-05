@@ -1,9 +1,10 @@
-use std::{error, ffi::NulError, fmt, mem, ptr, str::FromStr, sync::Arc};
+use std::os::raw::c_void;
+use std::{error, ffi::NulError, fmt, mem, ptr, slice, str::FromStr, sync::Arc};
 
 use log::error;
 use widestring::{U16CStr, U16CString};
 use windows::{
-    core::PCSTR,
+    core::{PCSTR, PCWSTR},
     Win32::{
         Foundation::GetLastError,
         Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
@@ -21,6 +22,7 @@ pub enum CertError {
     NameError,
     InvalidStoreType,
     PinError,
+    ChainError,
 }
 
 impl error::Error for CertError {}
@@ -34,6 +36,7 @@ impl fmt::Display for CertError {
             CertError::NameError => write!(f, "Name error"),
             CertError::InvalidStoreType => write!(f, "Invalid certificate store type"),
             CertError::PinError => write!(f, "PIN error"),
+            CertError::ChainError => write!(f, "Chain error"),
         }
     }
 }
@@ -48,6 +51,13 @@ impl From<NulError> for CertError {
     fn from(_: NulError) -> Self {
         CertError::NameError
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum SignaturePadding {
+    None,
+    Pkcs1,
+    Pss,
 }
 
 struct InnerKey(NCRYPT_HANDLE);
@@ -106,27 +116,46 @@ impl NCryptKey {
         }
     }
 
-    pub fn get_name(&self) -> Result<String, CertError> {
-        let mut key_name_prop = vec![0u8; 1024];
+    pub fn get_string_property(&self, property: &str) -> Result<String, CertError> {
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
-                NCRYPT_NAME_PROPERTY,
-                key_name_prop.as_mut_ptr(),
-                key_name_prop.len() as u32,
+                property,
+                ptr::null_mut(),
+                0,
+                &mut result,
+                OBJECT_SECURITY_INFORMATION::default(),
+            );
+
+            if let Err(e) = rc {
+                error!("Cannot get property size: {}", property);
+                return Err(CertError::ContextError(e.code().0 as _));
+            }
+            let mut prop_value = vec![0u8; result as usize];
+
+            let rc = NCryptGetProperty(
+                self.handle(),
+                property,
+                prop_value.as_mut_ptr(),
+                prop_value.len() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
             if let Err(e) = rc {
-                error!("Cannot get key property: {}", NCRYPT_NAME_PROPERTY);
+                error!("Cannot get property: {}", property);
                 return Err(CertError::ContextError(e.code().0 as _));
             }
-            Ok(U16CStr::from_ptr_str(key_name_prop.as_ptr() as _).to_string_lossy())
+
+            Ok(U16CStr::from_ptr_str(prop_value.as_ptr() as _).to_string_lossy())
         }
     }
 
-    pub fn get_provider(&self) -> Result<String, CertError> {
+    pub fn get_name(&self) -> Result<String, CertError> {
+        self.get_string_property(NCRYPT_NAME_PROPERTY)
+    }
+
+    pub fn get_provider_name(&self) -> Result<String, CertError> {
         let mut prov_handle = NCRYPT_HANDLE::default();
         let mut result: u32 = 0;
         unsafe {
@@ -147,28 +176,29 @@ impl NCryptKey {
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
-            let mut prov_name_prop = vec![0u8; 1024];
+            Self::from_handle(prov_handle).get_string_property(NCRYPT_NAME_PROPERTY)
+        }
+    }
 
+    pub fn get_bits(&self) -> Result<u32, CertError> {
+        let mut bits: u32 = 0;
+        let mut result: u32 = 0;
+        unsafe {
             let rc = NCryptGetProperty(
-                prov_handle,
-                NCRYPT_NAME_PROPERTY,
-                prov_name_prop.as_mut_ptr(),
-                prov_name_prop.len() as u32,
+                self.handle(),
+                NCRYPT_LENGTH_PROPERTY,
+                &mut bits as *mut _ as _,
+                mem::size_of::<u32>() as u32,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
 
-            let _ = NCryptFreeObject(prov_handle);
-
-            match rc {
-                Ok(_) => Ok(
-                    U16CStr::from_ptr_str(prov_name_prop.as_ptr() as *const _).to_string_lossy()
-                ),
-                Err(e) => {
-                    error!("Cannot get provider property: {}", NCRYPT_NAME_PROPERTY);
-                    Err(CertError::ContextError(e.code().0 as _))
-                }
+            if let Err(e) = rc {
+                error!("Cannot get key property: {}", NCRYPT_LENGTH_PROPERTY);
+                return Err(CertError::ContextError(e.code().0 as _));
             }
+
+            Ok(bits)
         }
     }
 
@@ -193,46 +223,131 @@ impl NCryptKey {
             }
         }
     }
+
+    pub fn get_algorithm_group(&self) -> Result<String, CertError> {
+        self.get_string_property(NCRYPT_ALGORITHM_GROUP_PROPERTY)
+    }
+
+    pub fn get_algorithm(&self) -> Result<String, CertError> {
+        self.get_string_property(NCRYPT_ALGORITHM_PROPERTY)
+    }
+
+    pub fn sign_hash(
+        &self,
+        hash: &[u8],
+        hash_alg: &str,
+        padding: SignaturePadding,
+    ) -> Result<Vec<u8>, CertError> {
+        let mut result = 0;
+        unsafe {
+            let alg_name = U16CString::from_str_unchecked(hash_alg);
+            let mut pkcs1 = BCRYPT_PKCS1_PADDING_INFO::default();
+            let mut pss = BCRYPT_PSS_PADDING_INFO::default();
+            let (info, flag) = match padding {
+                SignaturePadding::Pkcs1 => {
+                    pkcs1.pszAlgId = PCWSTR(alg_name.as_ptr());
+                    (&pkcs1 as *const _ as *const c_void, BCRYPT_PAD_PKCS1)
+                }
+                SignaturePadding::Pss => {
+                    pss.pszAlgId = PCWSTR(alg_name.as_ptr());
+                    pss.cbSalt = match hash_alg {
+                        "SHA256" => 32,
+                        "SHA384" => 48,
+                        "SHA512" => 64,
+                        _ => 0,
+                    };
+                    (&pss as *const _ as *const c_void, BCRYPT_PAD_PSS)
+                }
+                SignaturePadding::None => (ptr::null(), NCRYPT_FLAGS::default()),
+            };
+
+            NCryptSignHash(
+                NCRYPT_KEY_HANDLE(self.handle().0),
+                info,
+                hash.as_ptr(),
+                hash.len() as u32,
+                ptr::null_mut(),
+                0,
+                &mut result,
+                NCRYPT_SILENT_FLAG | flag,
+            )
+            .map_err(|e| CertError::CngError(e.code().0 as _))?;
+
+            let mut signature = vec![0u8; result as usize];
+
+            NCryptSignHash(
+                NCRYPT_KEY_HANDLE(self.handle().0),
+                info,
+                hash.as_ptr(),
+                hash.len() as u32,
+                signature.as_mut_ptr(),
+                signature.len() as u32,
+                &mut result,
+                NCRYPT_SILENT_FLAG | flag,
+            )
+            .map_err(|e| CertError::CngError(e.code().0 as _))?;
+
+            Ok(signature)
+        }
+    }
 }
 
-pub struct CertContext(*const CERT_CONTEXT, Option<NCryptKey>);
+pub struct CertContext {
+    context: *const CERT_CONTEXT,
+    key: Option<NCryptKey>,
+    owned: bool,
+}
 
 unsafe impl Send for CertContext {}
 unsafe impl Sync for CertContext {}
 
 impl Drop for CertContext {
     fn drop(&mut self) {
-        unsafe { CertFreeCertificateContext(self.0) };
+        if self.owned {
+            unsafe { CertFreeCertificateContext(self.context) };
+        }
     }
 }
 
 impl Clone for CertContext {
     fn clone(&self) -> Self {
-        CertContext(
-            unsafe { CertDuplicateCertificateContext(self.0) },
-            self.1.clone(),
-        )
+        Self {
+            context: unsafe { CertDuplicateCertificateContext(self.context) },
+            key: self.key.clone(),
+            owned: true,
+        }
     }
 }
 
 impl CertContext {
-    pub fn new(context: *const CERT_CONTEXT) -> Self {
-        CertContext(context, None)
+    pub fn from_raw(context: *const CERT_CONTEXT) -> Self {
+        Self {
+            context,
+            key: None,
+            owned: true,
+        }
+    }
+
+    pub fn from_raw_borrowed(context: *const CERT_CONTEXT) -> Self {
+        Self {
+            context,
+            key: None,
+            owned: false,
+        }
     }
 
     pub fn as_ptr(&self) -> *const CERT_CONTEXT {
-        self.0
+        self.context
     }
 
     pub fn key(&self) -> Option<NCryptKey> {
-        self.1.clone()
+        self.key.clone()
     }
 
     pub fn acquire_key(&mut self, silent: bool) -> Result<NCryptKey, CertError> {
-        let mut key = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
+        let mut handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
         let mut key_spec = CERT_KEY_SPEC::default();
-        let mut flags =
-            CRYPT_ACQUIRE_CACHE_FLAG | CRYPT_ACQUIRE_FLAGS(CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG);
+        let mut flags = CRYPT_ACQUIRE_FLAGS(CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG);
         if silent {
             flags |= CRYPT_ACQUIRE_SILENT_FLAG;
         }
@@ -241,7 +356,7 @@ impl CertContext {
                 self.as_ptr(),
                 flags,
                 ptr::null_mut(),
-                &mut key,
+                &mut handle,
                 &mut key_spec,
                 ptr::null_mut(),
             )
@@ -250,20 +365,62 @@ impl CertContext {
                 error!("Cannot acquire certificate private key");
                 Err(CertError::ContextError(GetLastError().0))
             } else {
-                let retval = NCryptKey::from_handle(NCRYPT_HANDLE(key.0));
-                self.1 = Some(retval.clone());
-                Ok(retval)
+                let key = NCryptKey::from_handle(NCRYPT_HANDLE(handle.0));
+                self.key = Some(key.clone());
+                Ok(key)
             }
         }
     }
 
-    pub fn get_data(&self) -> Vec<u8> {
+    pub fn as_der(&self) -> Vec<u8> {
         unsafe {
             std::slice::from_raw_parts(
                 (*self.as_ptr()).pbCertEncoded,
                 (*self.as_ptr()).cbCertEncoded as usize,
             )
             .into()
+        }
+    }
+
+    pub fn as_chain_der(&self) -> Result<Vec<Vec<u8>>, CertError> {
+        unsafe {
+            let mut param = CERT_CHAIN_PARA::default();
+            param.cbSize = mem::size_of::<CERT_CHAIN_PARA>() as u32;
+
+            let mut context: *mut CERT_CHAIN_CONTEXT = ptr::null_mut();
+
+            let result = CertGetCertificateChain(
+                HCERTCHAINENGINE::default(),
+                self.context,
+                ptr::null(),
+                HCERTSTORE::default(),
+                &param,
+                0,
+                ptr::null_mut(),
+                &mut context,
+            );
+
+            if result.as_bool() {
+                let mut chain = vec![];
+
+                if (*context).cChain > 0 {
+                    let chain_ptr = *(*context).rgpChain;
+                    let elements = slice::from_raw_parts(
+                        (*chain_ptr).rgpElement,
+                        (*chain_ptr).cElement as usize,
+                    );
+                    for element in elements {
+                        let context = (**element).pCertContext;
+                        chain.push(Self::from_raw_borrowed(context).as_der());
+                    }
+                }
+
+                CertFreeCertificateChain(context);
+
+                Ok(chain)
+            } else {
+                Err(CertError::ChainError)
+            }
         }
     }
 }
@@ -278,9 +435,15 @@ pub enum CertStoreType {
 impl CertStoreType {
     fn as_flags(&self) -> u32 {
         match self {
-            CertStoreType::LocalMachine => CERT_SYSTEM_STORE_LOCAL_MACHINE_ID,
-            CertStoreType::CurrentUser => CERT_SYSTEM_STORE_CURRENT_USER_ID,
-            CertStoreType::CurrentService => CERT_SYSTEM_STORE_CURRENT_SERVICE_ID,
+            CertStoreType::LocalMachine => {
+                CERT_SYSTEM_STORE_LOCAL_MACHINE_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT
+            }
+            CertStoreType::CurrentUser => {
+                CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT
+            }
+            CertStoreType::CurrentService => {
+                CERT_SYSTEM_STORE_CURRENT_SERVICE_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT
+            }
         }
     }
 }
@@ -329,7 +492,7 @@ impl CertStore {
         }
     }
 
-    pub fn from_pfx(data: &[u8], password: &str) -> Result<CertStore, CertError> {
+    pub fn from_pkcs12(data: &[u8], password: &str) -> Result<CertStore, CertError> {
         unsafe {
             let blob = CRYPTOAPI_BLOB {
                 cbData: data.len() as u32,
@@ -369,7 +532,7 @@ impl CertStore {
             } else {
                 // increase refcount because it will be released by next call to CertFindCertificateInStore
                 let cert = unsafe { CertDuplicateCertificateContext(cert) };
-                certs.push(CertContext::new(cert))
+                certs.push(CertContext::from_raw(cert))
             }
         }
         Ok(certs)
@@ -412,8 +575,8 @@ impl CertStore {
                 return Err(CertError::StoreError(GetLastError().0));
             }
 
-            let mut context = CertContext::new(context);
-            context.1 = key.clone();
+            let mut context = CertContext::from_raw(context);
+            context.key = key.clone();
 
             if let Some(key) = key {
                 let result = CertSetCertificateContextProperty(

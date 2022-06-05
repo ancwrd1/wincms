@@ -8,3 +8,6 @@ windows = { version = "0.37", features = [
     "alloc", "Win32_Foundation", "Win32_Security_Cryptography"] }
 widestring = "1.0.0-beta.1"
 log = "0.4"
+
+[dev-dependencies]
+sha2 = "0.10"
