@@ -2,7 +2,7 @@ use std::os::raw::c_void;
 use std::{error, ffi::NulError, fmt, mem, ptr, slice, str::FromStr, sync::Arc};
 
 use log::error;
-use widestring::{U16CStr, U16CString};
+use widestring::{u16cstr, U16CStr, U16CString};
 use windows::{
     core::{PCSTR, PCWSTR},
     Win32::{
@@ -86,14 +86,16 @@ impl NCryptKey {
         let mut handle = NCRYPT_PROV_HANDLE::default();
 
         unsafe {
-            match NCryptOpenStorageProvider(&mut handle, provider_name, 0) {
+            let u16provider = U16CString::from_str_unchecked(provider_name);
+            let u16key = U16CString::from_str_unchecked(key_name);
+            match NCryptOpenStorageProvider(&mut handle, PCWSTR(u16provider.as_ptr()), 0) {
                 Ok(_) => {
                     let mut hkey = NCRYPT_KEY_HANDLE::default();
 
                     let result = NCryptOpenKey(
                         handle,
                         &mut hkey,
-                        key_name,
+                        PCWSTR(u16key.as_ptr()),
                         CERT_KEY_SPEC::default(),
                         NCRYPT_FLAGS::default(),
                     );
@@ -119,9 +121,10 @@ impl NCryptKey {
     pub fn get_string_property(&self, property: &str) -> Result<String, CertError> {
         let mut result: u32 = 0;
         unsafe {
+            let u16property = U16CString::from_str_unchecked(property);
             let rc = NCryptGetProperty(
                 self.handle(),
-                property,
+                PCWSTR(u16property.as_ptr()),
                 ptr::null_mut(),
                 0,
                 &mut result,
@@ -136,7 +139,7 @@ impl NCryptKey {
 
             let rc = NCryptGetProperty(
                 self.handle(),
-                property,
+                PCWSTR(u16property.as_ptr()),
                 prop_value.as_mut_ptr(),
                 prop_value.len() as u32,
                 &mut result,
@@ -161,7 +164,7 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
-                NCRYPT_PROVIDER_HANDLE_PROPERTY,
+                PCWSTR(u16cstr!(NCRYPT_PROVIDER_HANDLE_PROPERTY).as_ptr()),
                 &mut prov_handle as *mut _ as _,
                 mem::size_of::<NCRYPT_HANDLE>() as u32,
                 &mut result,
@@ -186,7 +189,7 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
-                NCRYPT_LENGTH_PROPERTY,
+                PCWSTR(u16cstr!(NCRYPT_LENGTH_PROPERTY).as_ptr()),
                 &mut bits as *mut _ as _,
                 mem::size_of::<u32>() as u32,
                 &mut result,
@@ -208,7 +211,7 @@ impl NCryptKey {
         let result = unsafe {
             NCryptSetProperty(
                 self.handle(),
-                NCRYPT_PIN_PROPERTY,
+                PCWSTR(u16cstr!(NCRYPT_PIN_PROPERTY).as_ptr()),
                 pin_val.as_ptr() as _,
                 pin.len() as u32,
                 NCRYPT_FLAGS::default(),
@@ -499,7 +502,12 @@ impl CertStore {
                 pbData: data.as_ptr() as _,
             };
 
-            let store = PFXImportCertStore(&blob, password, CRYPT_KEY_FLAGS::default());
+            let u16password = U16CString::from_str_unchecked(password);
+            let store = PFXImportCertStore(
+                &blob,
+                PCWSTR(u16password.as_ptr()),
+                CRYPT_KEY_FLAGS::default(),
+            );
             match store {
                 Ok(handle) => Ok(CertStore(handle)),
                 Err(e) => Err(CertError::StoreError(e.code().0 as _)),
