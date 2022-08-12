@@ -16,7 +16,7 @@ fn get_last_error() -> u32 {
     unsafe { GetLastError().0 }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CmsError {
     NoSigner,
     NoRecipient,
@@ -129,13 +129,15 @@ impl CmsContent {
 
         let mut signers = [signer.as_ptr()];
 
-        let mut sign_param = CRYPT_SIGN_MESSAGE_PARA::default();
-        sign_param.cbSize = mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32;
-        sign_param.dwMsgEncodingType = MY_ENCODING_TYPE.0;
-        sign_param.pSigningCert = signer.as_ptr() as _;
-        sign_param.cMsgCert = 1;
-        sign_param.rgpMsgCert = signers.as_mut_ptr() as _;
-        sign_param.HashAlgorithm = hash_alg;
+        let sign_param = CRYPT_SIGN_MESSAGE_PARA {
+            cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
+            dwMsgEncodingType: MY_ENCODING_TYPE.0,
+            pSigningCert: signer.as_ptr() as _,
+            HashAlgorithm: hash_alg,
+            cMsgCert: 1,
+            rgpMsgCert: signers.as_mut_ptr() as _,
+            ..Default::default()
+        };
 
         let mut crypt_alg = CRYPT_ALGORITHM_IDENTIFIER::default();
         let alg_str = CString::new(self.0.encrypt_algorithm.as_bytes())?;
@@ -143,10 +145,12 @@ impl CmsContent {
 
         debug!("Using encryption algorithm: {}", self.0.encrypt_algorithm);
 
-        let mut encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA::default();
-        encrypt_param.cbSize = mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32;
-        encrypt_param.dwMsgEncodingType = MY_ENCODING_TYPE.0;
-        encrypt_param.ContentEncryptionAlgorithm = crypt_alg;
+        let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
+            cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
+            dwMsgEncodingType: MY_ENCODING_TYPE.0,
+            ContentEncryptionAlgorithm: crypt_alg,
+            ..Default::default()
+        };
 
         let recipients = self
             .0
@@ -211,15 +215,19 @@ impl CmsContent {
     pub fn decrypt_and_verify(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
         unsafe {
             let mut stores = [store.handle()];
-            let mut decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA::default();
-            decrypt_param.cbSize = mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32;
-            decrypt_param.dwMsgAndCertEncodingType = MY_ENCODING_TYPE.0;
-            decrypt_param.cCertStore = 1;
-            decrypt_param.rghCertStore = stores.as_mut_ptr() as _;
 
-            let mut verify_param = CRYPT_VERIFY_MESSAGE_PARA::default();
-            verify_param.cbSize = mem::size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32;
-            verify_param.dwMsgAndCertEncodingType = MY_ENCODING_TYPE.0;
+            let decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA {
+                cbSize: mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
+                dwMsgAndCertEncodingType: MY_ENCODING_TYPE.0,
+                cCertStore: 1,
+                rghCertStore: stores.as_mut_ptr() as _,
+            };
+
+            let verify_param = CRYPT_VERIFY_MESSAGE_PARA {
+                cbSize: mem::size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
+                dwMsgAndCertEncodingType: MY_ENCODING_TYPE.0,
+                ..Default::default()
+            };
 
             let mut message_size = 0u32;
 

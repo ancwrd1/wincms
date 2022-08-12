@@ -14,7 +14,7 @@ use windows::{
 pub const MY_ENCODING_TYPE: CERT_QUERY_ENCODING_TYPE =
     CERT_QUERY_ENCODING_TYPE(PKCS_7_ASN_ENCODING.0 | X509_ASN_ENCODING.0);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CertError {
     StoreError(u32),
     ContextError(u32),
@@ -53,7 +53,7 @@ impl From<NulError> for CertError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd)]
 pub enum SignaturePadding {
     None,
     Pkcs1,
@@ -387,8 +387,10 @@ impl CertContext {
 
     pub fn as_chain_der(&self) -> Result<Vec<Vec<u8>>, CertError> {
         unsafe {
-            let mut param = CERT_CHAIN_PARA::default();
-            param.cbSize = mem::size_of::<CERT_CHAIN_PARA>() as u32;
+            let param = CERT_CHAIN_PARA {
+                cbSize: mem::size_of::<CERT_CHAIN_PARA>() as u32,
+                ..Default::default()
+            };
 
             let mut context: *mut CERT_CHAIN_CONTEXT = ptr::null_mut();
 
@@ -428,7 +430,7 @@ impl CertContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CertStoreType {
     LocalMachine,
     CurrentUser,
