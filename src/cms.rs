@@ -1,7 +1,7 @@
 use std::{
     error,
     ffi::{CString, NulError},
-    fmt, mem, ptr,
+    fmt, mem,
 };
 
 use log::{debug, error};
@@ -165,9 +165,8 @@ impl CmsContent {
                 &sign_param,
                 &encrypt_param,
                 &recipients,
-                data.as_ptr(),
-                data.len() as u32,
-                ptr::null_mut(),
+                data,
+                None,
                 &mut encoded_blob_size,
             )
         }
@@ -194,9 +193,8 @@ impl CmsContent {
                 &sign_param,
                 &encrypt_param,
                 &recipients,
-                data.as_ptr(),
-                data.len() as u32,
-                encoded_blob.as_mut_ptr(),
+                data,
+                Some(encoded_blob.as_mut_ptr()),
                 &mut encoded_blob_size,
             )
             .as_bool()
@@ -235,12 +233,11 @@ impl CmsContent {
                 &decrypt_param,
                 &verify_param,
                 0,
-                data.as_ptr(),
-                data.len() as u32,
-                ptr::null_mut(),
-                &mut message_size,
-                ptr::null_mut(),
-                ptr::null_mut(),
+                data,
+                None,
+                Some(&mut message_size),
+                None,
+                None,
             )
             .as_bool();
 
@@ -258,12 +255,11 @@ impl CmsContent {
                 &decrypt_param,
                 &verify_param,
                 0,
-                data.as_ptr(),
-                data.len() as u32,
-                message.as_mut_ptr(),
-                &mut message_size,
-                ptr::null_mut(),
-                ptr::null_mut(),
+                data,
+                Some(message.as_mut_ptr()),
+                Some(&mut message_size),
+                None,
+                None,
             )
             .as_bool();
 

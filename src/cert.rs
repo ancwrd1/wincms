@@ -125,8 +125,7 @@ impl NCryptKey {
             let rc = NCryptGetProperty(
                 self.handle(),
                 PCWSTR(u16property.as_ptr()),
-                ptr::null_mut(),
-                0,
+                None,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
@@ -140,8 +139,7 @@ impl NCryptKey {
             let rc = NCryptGetProperty(
                 self.handle(),
                 PCWSTR(u16property.as_ptr()),
-                prop_value.as_mut_ptr(),
-                prop_value.len() as u32,
+                Some(&mut prop_value),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
@@ -159,14 +157,13 @@ impl NCryptKey {
     }
 
     pub fn get_provider_name(&self) -> Result<String, CertError> {
-        let mut prov_handle = NCRYPT_HANDLE::default();
+        let mut output = [0u8; mem::size_of::<NCRYPT_HANDLE>()];
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
                 PCWSTR(u16cstr!(NCRYPT_PROVIDER_HANDLE_PROPERTY).as_ptr()),
-                &mut prov_handle as *mut _ as _,
-                mem::size_of::<NCRYPT_HANDLE>() as u32,
+                Some(&mut output),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
@@ -179,19 +176,19 @@ impl NCryptKey {
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
+            let prov_handle = mem::transmute(output);
             Self::from_handle(prov_handle).get_string_property(NCRYPT_NAME_PROPERTY)
         }
     }
 
     pub fn get_bits(&self) -> Result<u32, CertError> {
-        let mut bits: u32 = 0;
+        let mut bits = [0u8; 4];
         let mut result: u32 = 0;
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
                 PCWSTR(u16cstr!(NCRYPT_LENGTH_PROPERTY).as_ptr()),
-                &mut bits as *mut _ as _,
-                mem::size_of::<u32>() as u32,
+                Some(&mut bits),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
@@ -201,7 +198,7 @@ impl NCryptKey {
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
-            Ok(bits)
+            Ok(u32::from_ne_bytes(bits))
         }
     }
 
@@ -212,8 +209,7 @@ impl NCryptKey {
             NCryptSetProperty(
                 self.handle(),
                 PCWSTR(u16cstr!(NCRYPT_PIN_PROPERTY).as_ptr()),
-                pin_val.as_ptr() as _,
-                pin.len() as u32,
+                slice::from_raw_parts(pin_val.as_ptr() as *const u8, pin.len()),
                 NCRYPT_FLAGS::default(),
             )
         };
@@ -266,11 +262,9 @@ impl NCryptKey {
 
             NCryptSignHash(
                 NCRYPT_KEY_HANDLE(self.handle().0),
-                info,
-                hash.as_ptr(),
-                hash.len() as u32,
-                ptr::null_mut(),
-                0,
+                Some(info),
+                hash,
+                None,
                 &mut result,
                 NCRYPT_SILENT_FLAG | flag,
             )
@@ -280,11 +274,9 @@ impl NCryptKey {
 
             NCryptSignHash(
                 NCRYPT_KEY_HANDLE(self.handle().0),
-                info,
-                hash.as_ptr(),
-                hash.len() as u32,
-                signature.as_mut_ptr(),
-                signature.len() as u32,
+                Some(info),
+                hash,
+                Some(&mut signature),
                 &mut result,
                 NCRYPT_SILENT_FLAG | flag,
             )
@@ -307,7 +299,7 @@ unsafe impl Sync for CertContext {}
 impl Drop for CertContext {
     fn drop(&mut self) {
         if self.owned {
-            unsafe { CertFreeCertificateContext(self.context) };
+            unsafe { CertFreeCertificateContext(Some(&*self.context)) };
         }
     }
 }
@@ -315,7 +307,7 @@ impl Drop for CertContext {
 impl Clone for CertContext {
     fn clone(&self) -> Self {
         Self {
-            context: unsafe { CertDuplicateCertificateContext(self.context) },
+            context: unsafe { CertDuplicateCertificateContext(Some(&*self.context)) },
             key: self.key.clone(),
             owned: true,
         }
@@ -343,6 +335,10 @@ impl CertContext {
         self.context
     }
 
+    pub fn as_ref(&self) -> &CERT_CONTEXT {
+        unsafe { &*self.context }
+    }
+
     pub fn key(&self) -> Option<NCryptKey> {
         self.key.clone()
     }
@@ -356,12 +352,12 @@ impl CertContext {
         }
         unsafe {
             let result = CryptAcquireCertificatePrivateKey(
-                self.as_ptr(),
+                self.as_ref(),
                 flags,
-                ptr::null_mut(),
+                None,
                 &mut handle,
-                &mut key_spec,
-                ptr::null_mut(),
+                Some(&mut key_spec),
+                None,
             )
             .as_bool();
             if !result {
@@ -397,11 +393,11 @@ impl CertContext {
             let result = CertGetCertificateChain(
                 HCERTCHAINENGINE::default(),
                 self.context,
-                ptr::null(),
+                None,
                 HCERTSTORE::default(),
                 &param,
                 0,
-                ptr::null_mut(),
+                None,
                 &mut context,
             );
 
@@ -485,7 +481,7 @@ impl CertStore {
                 CERT_QUERY_ENCODING_TYPE::default(),
                 HCRYPTPROV_LEGACY::default(),
                 CERT_OPEN_STORE_FLAGS(store_type.as_flags() | CERT_STORE_OPEN_EXISTING_FLAG.0),
-                store_name.as_ptr() as _,
+                Some(store_name.as_ptr() as _),
             )
         };
         match handle {
@@ -533,15 +529,15 @@ impl CertStore {
                     MY_ENCODING_TYPE.0,
                     0,
                     CERT_FIND_SUBJECT_STR,
-                    subject.as_ptr() as _,
-                    cert,
+                    Some(subject.as_ptr() as _),
+                    Some(cert),
                 )
             };
             if cert.is_null() {
                 break;
             } else {
                 // increase refcount because it will be released by next call to CertFindCertificateInStore
-                let cert = unsafe { CertDuplicateCertificateContext(cert) };
+                let cert = unsafe { CertDuplicateCertificateContext(Some(cert)) };
                 certs.push(CertContext::from_raw(cert))
             }
         }
@@ -554,7 +550,7 @@ impl CertStore {
                 self.0,
                 cert.as_ptr(),
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
-                ptr::null_mut(),
+                None,
             )
             .as_bool();
             if !result {
@@ -573,10 +569,9 @@ impl CertStore {
             let result = CertAddEncodedCertificateToStore(
                 self.0,
                 MY_ENCODING_TYPE.0,
-                cert.as_ptr(),
-                cert.len() as u32,
+                cert,
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
-                &mut context,
+                Some(&mut context),
             )
             .as_bool();
 
@@ -593,7 +588,7 @@ impl CertStore {
                     context.as_ptr(),
                     CERT_NCRYPT_KEY_HANDLE_PROP_ID,
                     0,
-                    key.handle().0 as _,
+                    Some(key.handle().0 as _),
                 )
                 .as_bool();
 
