@@ -335,10 +335,6 @@ impl CertContext {
         self.context
     }
 
-    pub fn as_ref(&self) -> &CERT_CONTEXT {
-        unsafe { &*self.context }
-    }
-
     pub fn key(&self) -> Option<NCryptKey> {
         self.key.clone()
     }
@@ -423,6 +419,12 @@ impl CertContext {
                 Err(CertError::ChainError)
             }
         }
+    }
+}
+
+impl AsRef<CERT_CONTEXT> for CertContext {
+    fn as_ref(&self) -> &CERT_CONTEXT {
+        unsafe { &*self.as_ptr() }
     }
 }
 
