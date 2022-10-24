@@ -2,7 +2,7 @@ use std::os::raw::c_void;
 use std::{error, ffi::NulError, fmt, mem, ptr, slice, str::FromStr, sync::Arc};
 
 use log::error;
-use widestring::{u16cstr, U16CStr, U16CString};
+use widestring::{U16CStr, U16CString};
 use windows::{
     core::{PCSTR, PCWSTR},
     Win32::{
@@ -118,33 +118,32 @@ impl NCryptKey {
         }
     }
 
-    pub fn get_string_property(&self, property: &str) -> Result<String, CertError> {
+    pub fn get_string_property(&self, property: PCWSTR) -> Result<String, CertError> {
         let mut result: u32 = 0;
         unsafe {
-            let u16property = U16CString::from_str_unchecked(property);
             let rc = NCryptGetProperty(
                 self.handle(),
-                PCWSTR(u16property.as_ptr()),
+                property,
                 None,
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
 
             if let Err(e) = rc {
-                error!("Cannot get property size: {}", property);
+                error!("{}", e);
                 return Err(CertError::ContextError(e.code().0 as _));
             }
             let mut prop_value = vec![0u8; result as usize];
 
             let rc = NCryptGetProperty(
                 self.handle(),
-                PCWSTR(u16property.as_ptr()),
+                property,
                 Some(&mut prop_value),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
             if let Err(e) = rc {
-                error!("Cannot get property: {}", property);
+                error!("{}", e);
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
@@ -162,17 +161,14 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
-                PCWSTR(u16cstr!(NCRYPT_PROVIDER_HANDLE_PROPERTY).as_ptr()),
+                NCRYPT_PROVIDER_HANDLE_PROPERTY,
                 Some(&mut output),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
 
             if let Err(e) = rc {
-                error!(
-                    "Cannot get key property: {}",
-                    NCRYPT_PROVIDER_HANDLE_PROPERTY
-                );
+                error!("{}", e);
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
@@ -187,14 +183,14 @@ impl NCryptKey {
         unsafe {
             let rc = NCryptGetProperty(
                 self.handle(),
-                PCWSTR(u16cstr!(NCRYPT_LENGTH_PROPERTY).as_ptr()),
+                NCRYPT_LENGTH_PROPERTY,
                 Some(&mut bits),
                 &mut result,
                 OBJECT_SECURITY_INFORMATION::default(),
             );
 
             if let Err(e) = rc {
-                error!("Cannot get key property: {}", NCRYPT_LENGTH_PROPERTY);
+                error!("{}", e);
                 return Err(CertError::ContextError(e.code().0 as _));
             }
 
@@ -208,7 +204,7 @@ impl NCryptKey {
         let result = unsafe {
             NCryptSetProperty(
                 self.handle(),
-                PCWSTR(u16cstr!(NCRYPT_PIN_PROPERTY).as_ptr()),
+                NCRYPT_PIN_PROPERTY,
                 slice::from_raw_parts(pin_val.as_ptr() as *const u8, pin.len()),
                 NCRYPT_FLAGS::default(),
             )

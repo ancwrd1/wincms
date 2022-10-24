@@ -1,12 +1,8 @@
-use std::{
-    error,
-    ffi::{CString, NulError},
-    fmt, mem,
-};
+use std::{error, ffi::NulError, fmt, mem};
 
 use log::{debug, error};
 use windows::{
-    core::PSTR,
+    core::{PCSTR, PSTR},
     Win32::{Foundation::GetLastError, Security::Cryptography::*},
 };
 
@@ -62,8 +58,8 @@ impl From<CertError> for CmsError {
 pub struct CmsContentBuilder {
     signer: Option<CertContext>,
     recipients: Vec<CertContext>,
-    hash_algorithm: String,
-    encrypt_algorithm: String,
+    hash_algorithm: PCSTR,
+    encrypt_algorithm: PCSTR,
 }
 
 impl CmsContentBuilder {
@@ -80,19 +76,13 @@ impl CmsContentBuilder {
         self
     }
 
-    pub fn hash_algorithm<S>(mut self, algorithm: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.hash_algorithm = algorithm.as_ref().to_owned();
+    pub fn hash_algorithm<S>(mut self, algorithm: PCSTR) -> Self {
+        self.hash_algorithm = algorithm;
         self
     }
 
-    pub fn encrypt_algorithm<S>(mut self, algorithm: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.encrypt_algorithm = algorithm.as_ref().to_owned();
+    pub fn encrypt_algorithm<S>(mut self, algorithm: PCSTR) -> Self {
+        self.encrypt_algorithm = algorithm;
         self
     }
 
@@ -122,10 +112,7 @@ impl CmsContent {
         }
 
         let mut hash_alg = CRYPT_ALGORITHM_IDENTIFIER::default();
-        let alg_str = CString::new(self.0.hash_algorithm.as_bytes())?;
-        hash_alg.pszObjId = PSTR(alg_str.as_ptr() as _);
-
-        debug!("Using hash algorithm: {}", self.0.hash_algorithm);
+        hash_alg.pszObjId = PSTR(self.0.hash_algorithm.0 as _);
 
         let mut signers = [signer.as_ptr()];
 
@@ -140,10 +127,7 @@ impl CmsContent {
         };
 
         let mut crypt_alg = CRYPT_ALGORITHM_IDENTIFIER::default();
-        let alg_str = CString::new(self.0.encrypt_algorithm.as_bytes())?;
-        crypt_alg.pszObjId = PSTR(alg_str.as_ptr() as _);
-
-        debug!("Using encryption algorithm: {}", self.0.encrypt_algorithm);
+        crypt_alg.pszObjId = PSTR(self.0.encrypt_algorithm.0 as _);
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
