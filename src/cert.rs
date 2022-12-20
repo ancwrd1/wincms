@@ -199,7 +199,7 @@ impl NCryptKey {
     }
 
     pub fn set_pin(&self, pin: &str) -> Result<(), CertError> {
-        let pin_val = U16CString::from_str(&pin)?;
+        let pin_val = U16CString::from_str(pin)?;
 
         let result = unsafe {
             NCryptSetProperty(

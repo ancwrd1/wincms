@@ -111,8 +111,10 @@ impl CmsContent {
             return Err(CmsError::NoRecipient);
         }
 
-        let mut hash_alg = CRYPT_ALGORITHM_IDENTIFIER::default();
-        hash_alg.pszObjId = PSTR(self.0.hash_algorithm.0 as _);
+        let hash_alg = CRYPT_ALGORITHM_IDENTIFIER {
+            pszObjId: PSTR(self.0.hash_algorithm.0 as _),
+            ..Default::default()
+        };
 
         let mut signers = [signer.as_ptr()];
 
@@ -126,8 +128,10 @@ impl CmsContent {
             ..Default::default()
         };
 
-        let mut crypt_alg = CRYPT_ALGORITHM_IDENTIFIER::default();
-        crypt_alg.pszObjId = PSTR(self.0.encrypt_algorithm.0 as _);
+        let crypt_alg = CRYPT_ALGORITHM_IDENTIFIER {
+            pszObjId: PSTR(self.0.encrypt_algorithm.0 as _),
+            ..Default::default()
+        };
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
