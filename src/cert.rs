@@ -493,7 +493,7 @@ impl CertStore {
 
     pub fn from_pkcs12(data: &[u8], password: &str) -> Result<CertStore, CertError> {
         unsafe {
-            let blob = CRYPTOAPI_BLOB {
+            let blob = CRYPT_INTEGER_BLOB {
                 cbData: data.len() as u32,
                 pbData: data.as_ptr() as _,
             };
@@ -524,7 +524,7 @@ impl CertStore {
             cert = unsafe {
                 CertFindCertificateInStore(
                     self.0,
-                    MY_ENCODING_TYPE.0,
+                    MY_ENCODING_TYPE,
                     0,
                     CERT_FIND_SUBJECT_STR,
                     Some(subject.as_ptr() as _),
@@ -566,7 +566,7 @@ impl CertStore {
         unsafe {
             let result = CertAddEncodedCertificateToStore(
                 self.0,
-                MY_ENCODING_TYPE.0,
+                MY_ENCODING_TYPE,
                 cert,
                 CERT_STORE_ADD_REPLACE_EXISTING_INHERIT_PROPERTIES,
                 Some(&mut context),
