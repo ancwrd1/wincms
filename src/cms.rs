@@ -31,8 +31,8 @@ impl fmt::Display for CmsError {
             CmsError::NoRecipient => write!(f, "No recipient certificate"),
             CmsError::NoPrivateKey => write!(f, "No private key for signer certificate"),
             CmsError::NameError => write!(f, "Name error"),
-            CmsError::ProcessingError(e) => write!(f, "Processing error: {:08x}", e),
-            CmsError::CertError(e) => write!(f, "Certificate error: {}", e),
+            CmsError::ProcessingError(e) => write!(f, "Processing error: {e:08x}"),
+            CmsError::CertError(e) => write!(f, "Certificate error: {e}"),
         }
     }
 }

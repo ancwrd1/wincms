@@ -30,9 +30,9 @@ impl error::Error for CertError {}
 impl fmt::Display for CertError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            CertError::StoreError(e) => write!(f, "Certificate store error: {:08x}", e),
-            CertError::ContextError(e) => write!(f, "Certificate context error: {:08x}", e),
-            CertError::CngError(e) => write!(f, "CNG error: {:08x}", e),
+            CertError::StoreError(e) => write!(f, "Certificate store error: {e:08x}"),
+            CertError::ContextError(e) => write!(f, "Certificate context error: {e:08x}"),
+            CertError::CngError(e) => write!(f, "CNG error: {e:08x}"),
             CertError::NameError => write!(f, "Name error"),
             CertError::InvalidStoreType => write!(f, "Invalid certificate store type"),
             CertError::PinError => write!(f, "PIN error"),
