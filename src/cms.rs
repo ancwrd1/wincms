@@ -2,7 +2,10 @@ use std::{error, ffi::NulError, fmt, mem, ptr};
 
 use windows_sys::{
     core::PCSTR,
-    Win32::{Foundation::GetLastError, Security::Cryptography::*},
+    Win32::{
+        Foundation::{GetLastError, ERROR_MORE_DATA},
+        Security::Cryptography::*,
+    },
 };
 
 use crate::cert::*;
@@ -171,8 +174,10 @@ impl CmsContent {
             )
         } != 0;
 
-        if !result {
-            return Err(CmsError::ProcessingError(get_last_error()));
+        let le = get_last_error();
+
+        if !result && le != ERROR_MORE_DATA {
+            return Err(CmsError::ProcessingError(le));
         }
 
         let mut encoded_blob = vec![0u8; encoded_blob_size as usize];
@@ -231,7 +236,9 @@ impl CmsContent {
                 ptr::null_mut(),
             ) != 0;
 
-            if !rc {
+            let le = get_last_error();
+
+            if !rc && le != ERROR_MORE_DATA {
                 return Err(CmsError::ProcessingError(GetLastError()));
             }
 
