@@ -1,15 +1,14 @@
-use std::{error, ffi::NulError, fmt, mem};
+use std::{error, ffi::NulError, fmt, mem, ptr};
 
-use log::{debug, error};
-use windows::{
-    core::{PCSTR, PSTR},
+use windows_sys::{
+    core::PCSTR,
     Win32::{Foundation::GetLastError, Security::Cryptography::*},
 };
 
 use crate::cert::*;
 
 fn get_last_error() -> u32 {
-    unsafe { GetLastError().0 }
+    unsafe { GetLastError() }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -112,32 +111,43 @@ impl CmsContent {
         }
 
         let hash_alg = CRYPT_ALGORITHM_IDENTIFIER {
-            pszObjId: PSTR(self.0.hash_algorithm.0 as _),
-            ..Default::default()
+            pszObjId: self.0.hash_algorithm as _,
+            Parameters: unsafe { mem::zeroed() },
         };
 
         let mut signers = [signer.as_ptr()];
 
         let sign_param = CRYPT_SIGN_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
-            dwMsgEncodingType: MY_ENCODING_TYPE.0,
+            dwMsgEncodingType: MY_ENCODING_TYPE,
             pSigningCert: signer.as_ptr() as _,
             HashAlgorithm: hash_alg,
+            pvHashAuxInfo: ptr::null_mut(),
             cMsgCert: 1,
             rgpMsgCert: signers.as_mut_ptr() as _,
-            ..Default::default()
+            cMsgCrl: 0,
+            rgpMsgCrl: ptr::null_mut(),
+            cAuthAttr: 0,
+            rgAuthAttr: ptr::null_mut(),
+            cUnauthAttr: 0,
+            rgUnauthAttr: ptr::null_mut(),
+            dwFlags: 0,
+            dwInnerContentType: 0,
         };
 
         let crypt_alg = CRYPT_ALGORITHM_IDENTIFIER {
-            pszObjId: PSTR(self.0.encrypt_algorithm.0 as _),
-            ..Default::default()
+            pszObjId: self.0.encrypt_algorithm as _,
+            Parameters: unsafe { mem::zeroed() },
         };
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
-            dwMsgEncodingType: MY_ENCODING_TYPE.0,
+            dwMsgEncodingType: MY_ENCODING_TYPE,
+            hCryptProv: 0,
             ContentEncryptionAlgorithm: crypt_alg,
-            ..Default::default()
+            pvEncryptionAuxInfo: ptr::null_mut(),
+            dwFlags: 0,
+            dwInnerContentType: 0,
         };
 
         let recipients = self
@@ -152,27 +162,18 @@ impl CmsContent {
             CryptSignAndEncryptMessage(
                 &sign_param,
                 &encrypt_param,
-                &recipients,
-                data,
-                None,
+                recipients.len() as u32,
+                recipients.as_ptr(),
+                data.as_ptr(),
+                0,
+                ptr::null_mut(),
                 &mut encoded_blob_size,
             )
-        }
-        .as_bool();
+        } != 0;
 
         if !result {
-            error!(
-                "Cannot calculate blob size, error: {:08x}",
-                get_last_error()
-            );
             return Err(CmsError::ProcessingError(get_last_error()));
         }
-
-        debug!(
-            "Data size: {}, encrypted blob size: {}",
-            data.len(),
-            encoded_blob_size
-        );
 
         let mut encoded_blob = vec![0u8; encoded_blob_size as usize];
 
@@ -180,19 +181,18 @@ impl CmsContent {
             CryptSignAndEncryptMessage(
                 &sign_param,
                 &encrypt_param,
-                &recipients,
-                data,
-                Some(encoded_blob.as_mut_ptr()),
+                recipients.len() as u32,
+                recipients.as_ptr(),
+                data.as_ptr(),
+                data.len() as u32,
+                encoded_blob.as_mut_ptr(),
                 &mut encoded_blob_size,
-            )
-            .as_bool()
+            ) != 0
         };
 
         if !result {
-            error!("Sign and encode failed, error: {:08x}", get_last_error());
             Err(CmsError::ProcessingError(get_last_error()))
         } else {
-            debug!("Sign and encrypt succeeded");
             encoded_blob.truncate(encoded_blob_size as _);
             Ok(encoded_blob)
         }
@@ -204,15 +204,17 @@ impl CmsContent {
 
             let decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA {
                 cbSize: mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
-                dwMsgAndCertEncodingType: MY_ENCODING_TYPE.0,
+                dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
                 cCertStore: 1,
                 rghCertStore: stores.as_mut_ptr() as _,
             };
 
             let verify_param = CRYPT_VERIFY_MESSAGE_PARA {
                 cbSize: mem::size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
-                dwMsgAndCertEncodingType: MY_ENCODING_TYPE.0,
-                ..Default::default()
+                dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
+                hCryptProv: 0,
+                pfnGetSignerCertificate: None,
+                pvGetArg: ptr::null_mut(),
             };
 
             let mut message_size = 0u32;
@@ -221,20 +223,16 @@ impl CmsContent {
                 &decrypt_param,
                 &verify_param,
                 0,
-                data,
-                None,
-                Some(&mut message_size),
-                None,
-                None,
-            )
-            .as_bool();
+                data.as_ptr(),
+                0,
+                ptr::null_mut(),
+                &mut message_size,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ) != 0;
 
             if !rc {
-                error!(
-                    "Cannot calculate message size, error: {:08x}",
-                    GetLastError().0
-                );
-                return Err(CmsError::ProcessingError(GetLastError().0));
+                return Err(CmsError::ProcessingError(GetLastError()));
             }
 
             let mut message = vec![0u8; message_size as usize];
@@ -243,26 +241,18 @@ impl CmsContent {
                 &decrypt_param,
                 &verify_param,
                 0,
-                data,
-                Some(message.as_mut_ptr()),
-                Some(&mut message_size),
-                None,
-                None,
-            )
-            .as_bool();
+                data.as_ptr(),
+                data.len() as u32,
+                message.as_mut_ptr(),
+                &mut message_size,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ) != 0;
 
             if !rc {
-                error!(
-                    "Cannot decrypt and verify message, error: {:08x}",
-                    GetLastError().0
-                );
-                return Err(CmsError::ProcessingError(GetLastError().0));
+                return Err(CmsError::ProcessingError(GetLastError()));
             }
 
-            debug!(
-                "Decrypt and verify succeeded, output size: {}",
-                message_size
-            );
             message.truncate(message_size as _);
 
             Ok(message)
