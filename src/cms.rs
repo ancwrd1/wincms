@@ -168,7 +168,7 @@ impl CmsContent {
                 recipients.len() as u32,
                 recipients.as_ptr(),
                 data.as_ptr(),
-                0,
+                data.len() as u32,
                 ptr::null_mut(),
                 &mut encoded_blob_size,
             )
@@ -229,7 +229,7 @@ impl CmsContent {
                 &verify_param,
                 0,
                 data.as_ptr(),
-                0,
+                data.len() as u32,
                 ptr::null_mut(),
                 &mut message_size,
                 ptr::null_mut(),
