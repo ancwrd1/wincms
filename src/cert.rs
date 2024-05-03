@@ -567,7 +567,7 @@ impl CertStore {
             }
 
             let mut context = CertContext::from_raw(context);
-            context.key = key.clone();
+            context.key.clone_from(&key);
 
             if let Some(key) = key {
                 let result = CertSetCertificateContextProperty(
