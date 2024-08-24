@@ -105,10 +105,8 @@ impl CmsContent {
         }
     }
 
-    /// Produces PKCS#7 CMS message which is signed with signer key and encrypted with recipient certificates
+    /// Create PKCS#7 CMS message which is signed with signer key and encrypted with recipient certificates
     pub fn sign_and_encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CmsError> {
-        let signer = self.0.signer.as_ref().ok_or(CmsError::NoSigner)?;
-
         if self.0.recipients.is_empty() {
             return Err(CmsError::NoRecipient);
         }
@@ -118,16 +116,16 @@ impl CmsContent {
             Parameters: unsafe { mem::zeroed() },
         };
 
-        let mut signers = [signer.as_ptr()];
+        let signers = self.0.signer.as_ref().map(|s| [s.as_ptr()]);
 
-        let sign_param = CRYPT_SIGN_MESSAGE_PARA {
-            cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
+        let sign_param = signers.map(|mut s| CRYPT_SIGN_MESSAGE_PARA {
+            cbSize: size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
-            pSigningCert: signer.as_ptr() as _,
+            pSigningCert: s.as_ptr() as _,
             HashAlgorithm: hash_alg,
             pvHashAuxInfo: ptr::null_mut(),
             cMsgCert: 1,
-            rgpMsgCert: signers.as_mut_ptr() as _,
+            rgpMsgCert: s.as_mut_ptr() as _,
             cMsgCrl: 0,
             rgpMsgCrl: ptr::null_mut(),
             cAuthAttr: 0,
@@ -136,7 +134,7 @@ impl CmsContent {
             rgUnauthAttr: ptr::null_mut(),
             dwFlags: 0,
             dwInnerContentType: 0,
-        };
+        });
 
         let crypt_alg = CRYPT_ALGORITHM_IDENTIFIER {
             pszObjId: self.0.encrypt_algorithm as _,
@@ -144,7 +142,7 @@ impl CmsContent {
         };
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
-            cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
+            cbSize: size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
             hCryptProv: 0,
             ContentEncryptionAlgorithm: crypt_alg,
@@ -161,41 +159,66 @@ impl CmsContent {
             .collect::<Vec<_>>();
 
         let mut encoded_blob_size: u32 = 0;
+
         let result = unsafe {
-            CryptSignAndEncryptMessage(
-                &sign_param,
-                &encrypt_param,
-                recipients.len() as u32,
-                recipients.as_ptr(),
-                data.as_ptr(),
-                data.len() as u32,
-                ptr::null_mut(),
-                &mut encoded_blob_size,
-            )
-        } != 0;
+            if let Some(ref sign_param) = sign_param {
+                CryptSignAndEncryptMessage(
+                    sign_param,
+                    &encrypt_param,
+                    recipients.len() as u32,
+                    recipients.as_ptr(),
+                    data.as_ptr(),
+                    data.len() as u32,
+                    ptr::null_mut(),
+                    &mut encoded_blob_size,
+                )
+            } else {
+                CryptEncryptMessage(
+                    &encrypt_param,
+                    recipients.len() as u32,
+                    recipients.as_ptr(),
+                    data.as_ptr(),
+                    data.len() as u32,
+                    ptr::null_mut(),
+                    &mut encoded_blob_size,
+                )
+            }
+        };
 
         let le = get_last_error();
 
-        if !result && le != ERROR_MORE_DATA {
+        if result == 0 && le != ERROR_MORE_DATA {
             return Err(CmsError::ProcessingError(le));
         }
 
         let mut encoded_blob = vec![0u8; encoded_blob_size as usize];
 
         let result = unsafe {
-            CryptSignAndEncryptMessage(
-                &sign_param,
-                &encrypt_param,
-                recipients.len() as u32,
-                recipients.as_ptr(),
-                data.as_ptr(),
-                data.len() as u32,
-                encoded_blob.as_mut_ptr(),
-                &mut encoded_blob_size,
-            ) != 0
+            if let Some(ref sign_param) = sign_param {
+                CryptSignAndEncryptMessage(
+                    sign_param,
+                    &encrypt_param,
+                    recipients.len() as u32,
+                    recipients.as_ptr(),
+                    data.as_ptr(),
+                    data.len() as u32,
+                    encoded_blob.as_mut_ptr(),
+                    &mut encoded_blob_size,
+                )
+            } else {
+                CryptEncryptMessage(
+                    &encrypt_param,
+                    recipients.len() as u32,
+                    recipients.as_ptr(),
+                    data.as_ptr(),
+                    data.len() as u32,
+                    encoded_blob.as_mut_ptr(),
+                    &mut encoded_blob_size,
+                )
+            }
         };
 
-        if !result {
+        if result == 0 {
             Err(CmsError::ProcessingError(get_last_error()))
         } else {
             encoded_blob.truncate(encoded_blob_size as _);
@@ -208,14 +231,14 @@ impl CmsContent {
             let mut stores = [store.handle()];
 
             let decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA {
-                cbSize: mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
+                cbSize: size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
                 dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
                 cCertStore: 1,
                 rghCertStore: stores.as_mut_ptr() as _,
             };
 
             let verify_param = CRYPT_VERIFY_MESSAGE_PARA {
-                cbSize: mem::size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
+                cbSize: size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
                 dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
                 hCryptProv: 0,
                 pfnGetSignerCertificate: None,
