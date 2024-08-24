@@ -121,7 +121,7 @@ impl CmsContent {
         let sign_param = signers.as_mut().map(|s| CRYPT_SIGN_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
-            pSigningCert: s.as_ptr() as _,
+            pSigningCert: s[0],
             HashAlgorithm: hash_alg,
             pvHashAuxInfo: ptr::null_mut(),
             cMsgCert: 1,
