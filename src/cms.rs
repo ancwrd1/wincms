@@ -119,7 +119,7 @@ impl CmsContent {
         let signers = self.0.signer.as_ref().map(|s| [s.as_ptr()]);
 
         let sign_param = signers.map(|mut s| CRYPT_SIGN_MESSAGE_PARA {
-            cbSize: size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
+            cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
             pSigningCert: s.as_ptr() as _,
             HashAlgorithm: hash_alg,
@@ -142,7 +142,7 @@ impl CmsContent {
         };
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
-            cbSize: size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
+            cbSize: mem::size_of::<CRYPT_ENCRYPT_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
             hCryptProv: 0,
             ContentEncryptionAlgorithm: crypt_alg,
@@ -231,14 +231,14 @@ impl CmsContent {
             let mut stores = [store.handle()];
 
             let decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA {
-                cbSize: size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
+                cbSize: mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
                 dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
                 cCertStore: 1,
                 rghCertStore: stores.as_mut_ptr() as _,
             };
 
             let verify_param = CRYPT_VERIFY_MESSAGE_PARA {
-                cbSize: size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
+                cbSize: mem::size_of::<CRYPT_VERIFY_MESSAGE_PARA>() as u32,
                 dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
                 hCryptProv: 0,
                 pfnGetSignerCertificate: None,
