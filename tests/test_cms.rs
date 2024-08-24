@@ -35,7 +35,8 @@ fn test_sign_encrypt() {
 
     assert!(encrypted.len() > MESSAGE.len());
 
-    let decrypted = CmsContent::decode(&store, &encrypted).expect("Decrypt and verify failed");
+    let decrypted =
+        CmsContent::decode(&store, &encrypted, true).expect("Decrypt and verify failed");
 
     assert_eq!(MESSAGE.as_bytes(), decrypted.as_slice());
 }
@@ -60,7 +61,8 @@ fn test_encrypt_only() {
 
     assert!(encrypted.len() > MESSAGE.len());
 
-    let decrypted = CmsContent::decrypt(&store, &encrypted).expect("Decrypt and verify failed");
+    let decrypted =
+        CmsContent::decode(&store, &encrypted, false).expect("Decrypt and verify failed");
 
     assert_eq!(MESSAGE.as_bytes(), decrypted.as_slice());
 }
