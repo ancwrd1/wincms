@@ -30,19 +30,18 @@ fn test_sign_encrypt() {
         .build();
 
     let encrypted = content
-        .sign_and_encrypt(MESSAGE.as_bytes())
+        .encode(MESSAGE.as_bytes())
         .expect("Sign and encrypt failed");
 
     assert!(encrypted.len() > MESSAGE.len());
 
-    let decrypted =
-        CmsContent::decrypt_and_verify(&store, &encrypted).expect("Decrypt and verify failed");
+    let decrypted = CmsContent::decode(&store, &encrypted).expect("Decrypt and verify failed");
 
     assert_eq!(MESSAGE.as_bytes(), decrypted.as_slice());
 }
 
 #[test]
-fn test_encrypt() {
+fn test_encrypt_only() {
     let store = CertStore::from_pkcs12(PFX, PASSWORD).expect("Cannot open cert store");
 
     let mut recipients = store
@@ -56,13 +55,12 @@ fn test_encrypt() {
     let content = CmsContent::builder().recipients(recipients).build();
 
     let encrypted = content
-        .sign_and_encrypt(MESSAGE.as_bytes())
+        .encode(MESSAGE.as_bytes())
         .expect("Sign and encrypt failed");
 
     assert!(encrypted.len() > MESSAGE.len());
 
-    let decrypted =
-        CmsContent::decrypt_and_verify(&store, &encrypted).expect("Decrypt and verify failed");
+    let decrypted = CmsContent::decrypt(&store, &encrypted).expect("Decrypt and verify failed");
 
     assert_eq!(MESSAGE.as_bytes(), decrypted.as_slice());
 }

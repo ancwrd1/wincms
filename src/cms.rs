@@ -106,7 +106,7 @@ impl CmsContent {
     }
 
     /// Create PKCS#7 CMS message which is signed with signer key and encrypted with recipient certificates
-    pub fn sign_and_encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CmsError> {
+    pub fn encode(&self, data: &[u8]) -> Result<Vec<u8>, CmsError> {
         if self.0.recipients.is_empty() {
             return Err(CmsError::NoRecipient);
         }
@@ -226,7 +226,7 @@ impl CmsContent {
         }
     }
 
-    pub fn decrypt_and_verify(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
+    pub fn decode(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
         unsafe {
             let mut stores = [store.handle()];
 
@@ -276,6 +276,55 @@ impl CmsContent {
                 message.as_mut_ptr(),
                 &mut message_size,
                 ptr::null_mut(),
+                ptr::null_mut(),
+            ) != 0;
+
+            if !rc {
+                return Err(CmsError::ProcessingError(GetLastError()));
+            }
+
+            message.truncate(message_size as _);
+
+            Ok(message)
+        }
+    }
+
+    pub fn decrypt(store: &CertStore, data: &[u8]) -> Result<Vec<u8>, CmsError> {
+        unsafe {
+            let mut stores = [store.handle()];
+
+            let decrypt_param = CRYPT_DECRYPT_MESSAGE_PARA {
+                cbSize: mem::size_of::<CRYPT_DECRYPT_MESSAGE_PARA>() as u32,
+                dwMsgAndCertEncodingType: MY_ENCODING_TYPE,
+                cCertStore: 1,
+                rghCertStore: stores.as_mut_ptr() as _,
+            };
+
+            let mut message_size = 0u32;
+
+            let rc = CryptDecryptMessage(
+                &decrypt_param,
+                data.as_ptr(),
+                data.len() as u32,
+                ptr::null_mut(),
+                &mut message_size,
+                ptr::null_mut(),
+            ) != 0;
+
+            let le = get_last_error();
+
+            if !rc && le != ERROR_MORE_DATA {
+                return Err(CmsError::ProcessingError(GetLastError()));
+            }
+
+            let mut message = vec![0u8; message_size as usize];
+
+            let rc = CryptDecryptMessage(
+                &decrypt_param,
+                data.as_ptr(),
+                data.len() as u32,
+                message.as_mut_ptr(),
+                &mut message_size,
                 ptr::null_mut(),
             ) != 0;
 
