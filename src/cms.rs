@@ -105,7 +105,7 @@ impl CmsContent {
         }
     }
 
-    /// Create PKCS#7 CMS message which is signed with signer key and encrypted with recipient certificates
+    /// Create PKCS#7 CMS message which is optionally signed with signer key and encrypted with recipient certificates
     pub fn encode(&self, data: &[u8]) -> Result<Vec<u8>, CmsError> {
         if self.0.recipients.is_empty() {
             return Err(CmsError::NoRecipient);
@@ -116,9 +116,9 @@ impl CmsContent {
             Parameters: unsafe { mem::zeroed() },
         };
 
-        let signers = self.0.signer.as_ref().map(|s| [s.as_ptr()]);
+        let mut signers = self.0.signer.as_ref().map(|s| [s.as_ptr()]);
 
-        let sign_param = signers.map(|mut s| CRYPT_SIGN_MESSAGE_PARA {
+        let sign_param = signers.as_mut().map(|s| CRYPT_SIGN_MESSAGE_PARA {
             cbSize: mem::size_of::<CRYPT_SIGN_MESSAGE_PARA>() as u32,
             dwMsgEncodingType: MY_ENCODING_TYPE,
             pSigningCert: s.as_ptr() as _,
