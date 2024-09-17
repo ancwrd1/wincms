@@ -148,7 +148,7 @@ impl CmsContent {
             ContentEncryptionAlgorithm: crypt_alg,
             pvEncryptionAuxInfo: ptr::null_mut(),
             dwFlags: 0,
-            dwInnerContentType: 0,
+            dwInnerContentType: if sign_param.is_some() { CMSG_SIGNED } else { CMSG_DATA },
         };
 
         let recipients = self
