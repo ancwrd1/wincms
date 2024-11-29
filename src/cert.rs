@@ -165,7 +165,7 @@ impl NCryptKey {
                 return Err(CertError::ContextError(rc));
             }
 
-            let prov_handle = mem::transmute(output);
+            let prov_handle = mem::transmute::<[u8; 8], usize>(output);
             Self::from_handle(prov_handle).get_string_property(NCRYPT_NAME_PROPERTY)
         }
     }
