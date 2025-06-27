@@ -165,7 +165,7 @@ impl NCryptKey {
                 return Err(CertError::ContextError(rc));
             }
 
-            let prov_handle = mem::transmute::<[u8; 8], usize>(output);
+            let prov_handle = usize::from_ne_bytes(output);
             Self::from_handle(prov_handle).get_string_property(NCRYPT_NAME_PROPERTY)
         }
     }
@@ -372,7 +372,7 @@ impl CertContext {
         unsafe {
             let param = CERT_CHAIN_PARA {
                 cbSize: mem::size_of::<CERT_CHAIN_PARA>() as u32,
-                RequestedUsage: mem::zeroed(),
+                ..Default::default()
             };
 
             let mut context: *mut CERT_CHAIN_CONTEXT = ptr::null_mut();
