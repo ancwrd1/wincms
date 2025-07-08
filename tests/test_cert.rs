@@ -1,5 +1,5 @@
-use sha2::digest::FixedOutput;
 use sha2::Digest;
+use sha2::digest::FixedOutput;
 use wincms::cert::{CertStore, SignaturePadding};
 
 const PFX: &[u8] = include_bytes!("wincms.p12");

@@ -4,11 +4,11 @@ use log::error;
 use widestring::{U16CStr, U16CString};
 use windows_sys::Win32::Foundation::S_OK;
 use windows_sys::{
-    core::{HRESULT, PCWSTR},
     Win32::{
         Foundation::GetLastError,
         Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
     },
+    core::{HRESULT, PCWSTR},
 };
 
 pub const MY_ENCODING_TYPE: CERT_QUERY_ENCODING_TYPE = PKCS_7_ASN_ENCODING | X509_ASN_ENCODING;

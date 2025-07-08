@@ -1,11 +1,11 @@
 use std::{error, ffi::NulError, fmt, mem, ptr};
 
 use windows_sys::{
-    core::PCSTR,
     Win32::{
-        Foundation::{GetLastError, ERROR_MORE_DATA},
+        Foundation::{ERROR_MORE_DATA, GetLastError},
         Security::Cryptography::*,
     },
+    core::PCSTR,
 };
 
 use crate::cert::*;
@@ -148,7 +148,11 @@ impl CmsContent {
             ContentEncryptionAlgorithm: crypt_alg,
             pvEncryptionAuxInfo: ptr::null_mut(),
             dwFlags: 0,
-            dwInnerContentType: if sign_param.is_some() { CMSG_SIGNED } else { CMSG_DATA },
+            dwInnerContentType: if sign_param.is_some() {
+                CMSG_SIGNED
+            } else {
+                CMSG_DATA
+            },
         };
 
         let recipients = self
