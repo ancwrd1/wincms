@@ -113,7 +113,7 @@ impl CmsContent {
 
         let hash_alg = CRYPT_ALGORITHM_IDENTIFIER {
             pszObjId: self.0.hash_algorithm as _,
-            Parameters: unsafe { mem::zeroed() },
+            ..Default::default()
         };
 
         let mut signers = self.0.signer.as_ref().map(|s| [s.as_ptr()]);
@@ -138,7 +138,7 @@ impl CmsContent {
 
         let crypt_alg = CRYPT_ALGORITHM_IDENTIFIER {
             pszObjId: self.0.encrypt_algorithm as _,
-            Parameters: unsafe { mem::zeroed() },
+            ..Default::default()
         };
 
         let encrypt_param = CRYPT_ENCRYPT_MESSAGE_PARA {
