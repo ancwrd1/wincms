@@ -1,11 +1,10 @@
 use std::{error, ffi::NulError, fmt, mem, os::raw::c_void, ptr, slice, str::FromStr, sync::Arc};
 
-use log::error;
+use tracing::error;
 use widestring::{U16CStr, U16CString};
-use windows_sys::Win32::Foundation::S_OK;
 use windows_sys::{
     Win32::{
-        Foundation::GetLastError,
+        Foundation::{GetLastError, S_OK},
         Security::{Cryptography::*, OBJECT_SECURITY_INFORMATION},
     },
     core::{HRESULT, PCWSTR},
